@@ -182,5 +182,194 @@ async def i(ctx, username):
         print(e)
 
 # TODO: You can continue adding all ticket buttons, modals, leaderboard, server selection, transcript generation following the same structure using discord.py 2.x UI and commands.
+# ---------- TICKET MODAL ----------
+class TicketModal(Modal):
+    def __init__(self):
+        super().__init__(title="Create a Ticket")
+        self.add_item(TextInput(label="What is Your Side of the Trade?", custom_id="q2"))
+        self.add_item(TextInput(label="What is Other Side of the Trade?", custom_id="q3"))
+        self.add_item(TextInput(label="Paste The Other Trader's Full User ID", custom_id="q4"))
 
+    async def callback(self, interaction: discord.Interaction):
+        # Check if user already has a ticket
+        existing = None
+        for c in interaction.guild.channels:
+            if getattr(c, "category_id", None) == TICKET_CATEGORY:
+                perms = c.permissions_for(interaction.user)
+                if perms.view_channel:
+                    existing = c
+                    break
+        if existing:
+            await interaction.response.send_message(f"❌ You already have an open ticket: {existing.mention}", ephemeral=True)
+            return
+
+        q2 = self.children[0].value
+        q3 = self.children[1].value
+        q4 = self.children[2].value
+        isValidId = re.fullmatch(r"\d{17,19}", q4)
+        targetMention = f"<@{q4}>" if isValidId else "Unknown User"
+
+        # Permissions
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+            OWNER_ID: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+            MIDDLEMAN_ROLE: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+
+        if isValidId:
+            member = interaction.guild.get_member(int(q4))
+            if member:
+                overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+        ticket_channel = await interaction.guild.create_text_channel(
+            name=f"ticket-{interaction.user.name}",
+            category=discord.utils.get(interaction.guild.categories, id=TICKET_CATEGORY),
+            overwrites=overwrites
+        )
+
+        await ticketsCollection.insert_one({
+            "channelId": ticket_channel.id,
+            "user1": interaction.user.id,
+            "user2": int(q4) if isValidId else None
+        })
+
+        embed = Embed(title="Middleman Request", color=0xFFFFFF)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(name="**User 1**", value=f"<@{interaction.user.id}>", inline=True)
+        embed.add_field(name="**User 2**", value=targetMention, inline=True)
+        embed.add_field(name="\u200B", value="\u200B")
+        embed.add_field(name="**Trade Details**", value=f"> {q2}")
+        embed.add_field(name="**User 1 is giving**", value=f"> {q2}")
+        embed.add_field(name="**User 2 is giving**", value=f"> {q3}")
+        embed.set_footer(text=f"Ticket by {interaction.user}", icon_url=interaction.user.display_avatar.url)
+        embed.timestamp = datetime.utcnow()
+
+        infoEmbed = Embed(color=0xFFFFFF)
+        infoEmbed.description = (
+            f"Please wait for our **Middleman Team** to assist you.\n"
+            f"Make sure to abide by all the rules and **vouch when the trade is over**."
+        )
+
+        await ticket_channel.send(content=f"{interaction.user.mention} made a ticket with {targetMention}. Please wait until <@{OWNER_ID}> assists you.", embeds=[infoEmbed, embed])
+        await interaction.response.send_message(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
+
+# Command to open modal
+@bot.command()
+async def ticket(ctx):
+    await ctx.send_modal(TicketModal())
+
+# ---------- SERVER SELECTION BUTTONS ----------
+class ServerSelectView(View):
+    def __init__(self, game_key: str):
+        super().__init__(timeout=None)
+        game = gameData[game_key]
+        self.add_item(Button(label="Join Public Server", style=ButtonStyle.primary, custom_id=f"public_{game_key}"))
+        self.add_item(Button(label="Join Private Server", style=ButtonStyle.secondary, custom_id=f"private_{game_key}"))
+
+@bot.command()
+async def servers(ctx, game: str):
+    game = game.lower()
+    if game not in gameData:
+        await ctx.send("❌ Invalid game key!")
+        return
+    g = gameData[game]
+    embed = Embed(title=f"Server Options for {g['name']}", description="**Please Choose Which Server You Would Be The Most Comfortable For The Trade In. Confirm The Middleman Which Server To Join**", color=0x000000)
+    embed.set_image(url=g["thumbnail"])
+    await ctx.send(embed=embed, view=ServerSelectView(game))
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if not interaction.type == discord.InteractionType.component:
+        return
+    custom_id = interaction.data["custom_id"]
+    if custom_id.startswith("public_") or custom_id.startswith("private_"):
+        typ, game = custom_id.split("_")
+        g = gameData.get(game)
+        if not g:
+            await interaction.response.send_message("❌ Unknown game!", ephemeral=True)
+            return
+        isPublic = typ == "public"
+        embed = Embed(title="Server Chosen", color=0x000000)
+        embed.description = f"**{interaction.user} has chosen to trade in the {'Public' if isPublic else 'Private'} Server.**"
+        embed.add_field(name="🔗 Click to Join:", value=f"[{'Public' if isPublic else 'Private'} Server Link]({g['publicLink'] if isPublic else g['privateLink']})")
+        embed.set_image(url=g["thumbnail"])
+        embed.timestamp = datetime.utcnow()
+        await interaction.response.edit_message(embed=embed, view=None)
+
+# ---------- TRANSCRIPT HANDLER ----------
+async def handle_transcript(ctx_channel, interaction_user):
+    from discord_html_transcripts import create_transcript
+    import os
+    import pathlib
+
+    messages = [m async for m in ctx_channel.history(limit=None)]
+    messages.sort(key=lambda x: x.created_at)
+    participants = {m.author.id: messages.count(m) for m in messages if not m.author.bot}
+
+    transcript_folder = pathlib.Path("transcripts")
+    transcript_folder.mkdir(exist_ok=True)
+    transcript_file = transcript_folder / f"{ctx_channel.id}.html"
+
+    transcript = await create_transcript(ctx_channel, limit=-1, return_type="file", file_name=transcript_file.name, save_images=True)
+    transcript_file.write_bytes(transcript.fp.read())
+
+    await interaction_user.send(f"Transcript for {ctx_channel.name} ready!", file=discord.File(transcript_file))
+
+@bot.command()
+async def transcript(ctx):
+    if ctx.channel.category_id != TICKET_CATEGORY:
+        await ctx.send("❌ You can only use this inside ticket channels.")
+        return
+    await handle_transcript(ctx.channel, ctx.author)
+    await ctx.send("✅ Transcript sent to your DMs.")
+    # ---------- LEADERBOARD POINTS ----------
+@bot.command()
+async def logpoints(ctx, user: discord.User):
+    """Logs 1 point for the given user and updates leaderboard"""
+    try:
+        # Fetch current leaderboard from DB
+        leaderboard = await leaderboardCollection.find_one({"guild_id": ctx.guild.id})
+        if not leaderboard:
+            leaderboard = {"guild_id": ctx.guild.id, "points": {}}
+
+        points = leaderboard["points"]
+        user_id = str(user.id)
+        points[user_id] = points.get(user_id, 0) + 1
+
+        # Update DB
+        await leaderboardCollection.update_one(
+            {"guild_id": ctx.guild.id},
+            {"$set": {"points": points}},
+            upsert=True
+        )
+
+        # Sort leaderboard
+        sorted_lb = sorted(points.items(), key=lambda x: x[1], reverse=True)
+        description = "\n".join([f"<@{uid}> — `{pts}` points" for uid, pts in sorted_lb[:10]])
+
+        embed = Embed(title="🏆 Leaderboard", color=0x00FF00, description=description)
+        embed.timestamp = datetime.utcnow()
+
+        await ctx.send(f"✅ Logged 1 point for {user.mention}", embed=embed)
+
+    except Exception as e:
+        print(f"❌ Error logging points: {e}")
+        await ctx.send("❌ Something went wrong while logging points.")
+
+# Command to view leaderboard
+@bot.command()
+async def leaderboard(ctx):
+    leaderboard = await leaderboardCollection.find_one({"guild_id": ctx.guild.id})
+    if not leaderboard or not leaderboard.get("points"):
+        await ctx.send("📊 No points logged yet.")
+        return
+
+    points = leaderboard["points"]
+    sorted_lb = sorted(points.items(), key=lambda x: x[1], reverse=True)
+    description = "\n".join([f"<@{uid}> — `{pts}` points" for uid, pts in sorted_lb[:10]])
+
+    embed = Embed(title="🏆 Leaderboard", color=0x00FF00, description=description)
+    embed.timestamp = datetime.utcnow()
+    await ctx.send(embed=embed)
 bot.run(TOKEN)
