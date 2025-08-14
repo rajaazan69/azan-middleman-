@@ -1,0 +1,7 @@
+discord.py==2.5.1
+pymongo==4.5.0
+motor==4.3.3
+aiohttp==3.9.5
+python-dotenv==1.0.0
+msal==1.24.0
+python-dateutil==2.8.2
