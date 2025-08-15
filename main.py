@@ -55,7 +55,7 @@ const OWNER_ID = '';
 const MIDDLEMAN_ROLE = '';
 const PANEL_CHANNEL = '';
 const TICKET_CATEGORY = '';
-const TRANSCRIPT_CHANNEL = '';
+const TRANSCRIPT_CHANNEL = 'h';
 const BASE_URL = process.env.BASE_URL;
 
 app.get('/transcripts/:filename', (req, res) => {
