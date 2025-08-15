@@ -51,11 +51,11 @@ const client = new Client({
 });
 
 const PORT = process.env.PORT || 3000;
-const OWNER_ID = '';
-const MIDDLEMAN_ROLE = '';
-const PANEL_CHANNEL = '';
-const TICKET_CATEGORY = '';
-const TRANSCRIPT_CHANNEL = 'h';
+const OWNER_ID = '1356149794040446998';
+const MIDDLEMAN_ROLE = '1373062797545570525';
+const PANEL_CHANNEL = '1373048211538841702';
+const TICKET_CATEGORY = '1373027564926406796';
+const TRANSCRIPT_CHANNEL = '1373058123547283568';
 const BASE_URL = process.env.BASE_URL;
 
 app.get('/transcripts/:filename', (req, res) => {
