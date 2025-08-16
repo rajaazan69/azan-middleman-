@@ -24,6 +24,7 @@ async def load_cogs():
     await bot.load_extension("cogs.servers")
     await bot.load_extension("cogs.moderation")
     await bot.load_extension("cogs.ticket_commands")
+    await bot.load_extension("cogs.roblox")
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
