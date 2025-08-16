@@ -8,6 +8,7 @@ from utils.constants import (
 )
 from utils.db import collections
 
+
 class TicketPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -21,77 +22,86 @@ class TicketPanelView(discord.ui.View):
             q4 = discord.ui.TextInput(label="Their Discord ID?", required=True, max_length=20)
 
             async def on_submit(self, modal_interaction: discord.Interaction):
-                colls = await collections()
+                # ✅ Acknowledge immediately
+                await modal_interaction.response.defer(ephemeral=True, thinking=False)
 
-                # Prevent multiple tickets with existing permission-overwrite check
-                cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
-                if cat:
-                    for ch in cat.channels:
-                        ow = ch.overwrites_for(modal_interaction.user)
-                        if ow.view_channel:
-                            await modal_interaction.response.send_message(
-                                f"❌ You already have an open ticket: {ch.mention}", ephemeral=True
-                            )
-                            return
+                try:
+                    colls = await collections()
 
-                q1v = str(self.q1)
-                q2v = str(self.q2)
-                q3v = str(self.q3)
-                q4v = str(self.q4)
+                    # Prevent multiple tickets with existing permission-overwrite check
+                    cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
+                    if cat:
+                        for ch in cat.channels:
+                            ow = ch.overwrites_for(modal_interaction.user)
+                            if ow.view_channel:
+                                await modal_interaction.followup.send(
+                                    f"❌ You already have an open ticket: {ch.mention}", ephemeral=True
+                                )
+                                return
 
-                valid = re.fullmatch(r"\d{17,19}", q4v or "")
-                target_member = None
-                if valid:
-                    target_member = modal_interaction.guild.get_member(int(q4v))
+                    q1v = str(self.q1)
+                    q2v = str(self.q2)
+                    q3v = str(self.q3)
+                    q4v = str(self.q4)
 
-                overwrites = {
-                    modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-                }
-                owner = modal_interaction.guild.get_member(OWNER_ID)
-                if owner:
-                    overwrites[owner] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-                middle_role = modal_interaction.guild.get_role(MIDDLEMAN_ROLE_ID)
-                if middle_role:
-                    overwrites[middle_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-                if target_member:
-                    overwrites[target_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    valid = re.fullmatch(r"\d{17,19}", q4v or "")
+                    target_member = None
+                    if valid:
+                        target_member = modal_interaction.guild.get_member(int(q4v))
 
-                cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
-                ticket = await modal_interaction.guild.create_text_channel(
-                    name=f"ticket-{modal_interaction.user.name}",
-                    category=cat,
-                    overwrites=overwrites
-                )
+                    overwrites = {
+                        modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                    }
+                    owner = modal_interaction.guild.get_member(OWNER_ID)
+                    if owner:
+                        overwrites[owner] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    middle_role = modal_interaction.guild.get_role(MIDDLEMAN_ROLE_ID)
+                    if middle_role:
+                        overwrites[middle_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    if target_member:
+                        overwrites[target_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
-                await colls["tickets"].insert_one({
-                    "channelId": str(ticket.id),
-                    "user1": str(modal_interaction.user.id),
-                    "user2": str(target_member.id) if target_member else None
-                })
+                    cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
+                    ticket = await modal_interaction.guild.create_text_channel(
+                        name=f"ticket-{modal_interaction.user.name}",
+                        category=cat,
+                        overwrites=overwrites
+                    )
 
-                # info + details embed
-                info = discord.Embed(
-                    description=f"Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all the rules and **vouch when the trade is over**.",
-                    color=EMBED_COLOR
-                )
-                user2_val = f"<@{target_member.id}>" if target_member else "`Unknown User`"
-                details = discord.Embed(title="Middleman Request", color=0xFFFFFF)
-                details.set_thumbnail(url=modal_interaction.user.display_avatar.url)
-                details.add_field(name="**User 1**", value=f"<@{modal_interaction.user.id}>", inline=True)
-                details.add_field(name="**User 2**", value=user2_val, inline=True)
-                details.add_field(name="\u200b", value="\u200b", inline=False)
-                details.add_field(name="**Trade Details**", value=f"> {q1v}", inline=False)
-                details.add_field(name="**User 1 is giving**", value=f"> {q2v}", inline=False)
-                details.add_field(name="**User 2 is giving**", value=f"> {q3v}", inline=False)
+                    await colls["tickets"].insert_one({
+                        "channelId": str(ticket.id),
+                        "user1": str(modal_interaction.user.id),
+                        "user2": str(target_member.id) if target_member else None
+                    })
 
-                await ticket.send(
-                    content=f"<@{modal_interaction.user.id}> made a ticket with {user2_val}.\nPlease wait until <@{OWNER_ID}> assists you.",
-                    embeds=[info, details]
-                )
-                await modal_interaction.response.send_message(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
+                    # info + details embed
+                    info = discord.Embed(
+                        description=f"Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all the rules and **vouch when the trade is over**.",
+                        color=EMBED_COLOR
+                    )
+                    user2_val = f"<@{target_member.id}>" if target_member else "`Unknown User`"
+                    details = discord.Embed(title="Middleman Request", color=0xFFFFFF)
+                    details.set_thumbnail(url=modal_interaction.user.display_avatar.url)
+                    details.add_field(name="**User 1**", value=f"<@{modal_interaction.user.id}>", inline=True)
+                    details.add_field(name="**User 2**", value=user2_val, inline=True)
+                    details.add_field(name="\u200b", value="\u200b", inline=False)
+                    details.add_field(name="**Trade Details**", value=f"> {q1v}", inline=False)
+                    details.add_field(name="**User 1 is giving**", value=f"> {q2v}", inline=False)
+                    details.add_field(name="**User 2 is giving**", value=f"> {q3v}", inline=False)
+
+                    await ticket.send(
+                        content=f"<@{modal_interaction.user.id}> made a ticket with {user2_val}.\nPlease wait until <@{OWNER_ID}> assists you.",
+                        embeds=[info, details]
+                    )
+
+                    await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
+
+                except Exception as e:
+                    await modal_interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
         await interaction.response.send_modal(TicketModal())
+
 
 class ClosePanel(discord.ui.View):
     def __init__(self, owner_tag: str, ticket_owner_id: int | None):
@@ -115,6 +125,7 @@ class ClosePanel(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         cog = interaction.client.get_cog("Transcripts")
         await cog.log_points(interaction)
+
 
 class Tickets(commands.Cog):
     def __init__(self, bot):
@@ -170,6 +181,7 @@ class Tickets(commands.Cog):
         embed.add_field(name="Owner", value=f"<@{ticket_owner_id}>" if ticket_owner_id else "Unknown", inline=True)
         embed.set_footer(text=f"Closed by {ctx.author}")
         await ctx.send(embed=embed, view=ClosePanel(str(ctx.author), ticket_owner_id))
+
 
 async def setup(bot):
     await bot.add_cog(Tickets(bot))
