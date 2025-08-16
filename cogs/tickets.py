@@ -1,14 +1,15 @@
 import re
 import os
+from datetime import datetime
 import discord
 from discord.ext import commands
-from discord import app_commands
-from utils.constants import (
-    EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID
-)
+from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID
 from utils.db import collections
 
 
+# -------------------------
+# Ticket request panel view
+# -------------------------
 class TicketPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -22,13 +23,12 @@ class TicketPanelView(discord.ui.View):
             q4 = discord.ui.TextInput(label="Their Discord ID?", required=True, max_length=20)
 
             async def on_submit(self, modal_interaction: discord.Interaction):
-                # ✅ Acknowledge immediately
                 await modal_interaction.response.defer(ephemeral=True, thinking=False)
 
                 try:
                     colls = await collections()
 
-                    # Prevent multiple tickets with existing permission-overwrite check
+                    # Check for existing ticket
                     cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
                     if cat:
                         for ch in cat.channels:
@@ -39,14 +39,10 @@ class TicketPanelView(discord.ui.View):
                                 )
                                 return
 
-                    q1v = str(self.q1)
-                    q2v = str(self.q2)
-                    q3v = str(self.q3)
-                    q4v = str(self.q4)
+                    q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
 
-                    valid = re.fullmatch(r"\d{17,19}", q4v or "")
                     target_member = None
-                    if valid:
+                    if re.fullmatch(r"\d{17,19}", q4v):
                         target_member = modal_interaction.guild.get_member(int(q4v))
 
                     overwrites = {
@@ -62,7 +58,6 @@ class TicketPanelView(discord.ui.View):
                     if target_member:
                         overwrites[target_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
-                    cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
                     ticket = await modal_interaction.guild.create_text_channel(
                         name=f"ticket-{modal_interaction.user.name}",
                         category=cat,
@@ -75,9 +70,9 @@ class TicketPanelView(discord.ui.View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
-                    # info + details embed
+                    # Info embed
                     info = discord.Embed(
-                        description=f"Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all the rules and **vouch when the trade is over**.",
+                        description="Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all rules and **vouch when the trade is over**.",
                         color=EMBED_COLOR
                     )
                     user2_val = f"<@{target_member.id}>" if target_member else "`Unknown User`"
@@ -103,6 +98,9 @@ class TicketPanelView(discord.ui.View):
         await interaction.response.send_modal(TicketModal())
 
 
+# -------------------------
+# Close ticket view
+# -------------------------
 class ClosePanel(discord.ui.View):
     def __init__(self, owner_tag: str, ticket_owner_id: int | None):
         super().__init__(timeout=None)
@@ -113,7 +111,10 @@ class ClosePanel(discord.ui.View):
     async def transcript_btn(self, interaction: discord.Interaction, _):
         await interaction.response.defer(ephemeral=True)
         cog = interaction.client.get_cog("Transcripts")
-        await cog.generate_transcript(interaction, interaction.channel)  # re-use transcript cog
+        if cog:
+            await cog.generate_transcript(interaction, interaction.channel)
+        else:
+            await interaction.followup.send("❌ Transcript system not available.", ephemeral=True)
 
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
@@ -123,10 +124,67 @@ class ClosePanel(discord.ui.View):
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
     async def log_points_btn(self, interaction: discord.Interaction, _):
         await interaction.response.defer(ephemeral=True)
-        cog = interaction.client.get_cog("Transcripts")
-        await cog.log_points(interaction)
+        try:
+            colls = await collections()
+            tickets_coll = colls["tickets"]
+            points_coll = colls["clientPoints"]
+
+            channel = interaction.channel
+            guild = interaction.guild
+
+            # Check ticket category
+            if channel.category_id != TICKET_CATEGORY_ID:
+                return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
+
+            # Get ticket data
+            ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
+            if not ticket_data:
+                return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
+
+            user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
+            user_ids = [uid for uid in user_ids if uid]
+
+            # Add points
+            for uid in user_ids:
+                existing = await points_coll.find_one({"userId": uid})
+                if existing:
+                    await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}})
+                else:
+                    await points_coll.insert_one({"userId": uid, "points": 1})
+
+            # Update leaderboard message
+            leaderboard_channel_id = int(os.getenv("LEADERBOARD_CHANNEL_ID"))
+            leaderboard_message_id = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
+            leaderboard_channel = guild.get_channel(leaderboard_channel_id)
+            if leaderboard_channel:
+                leaderboard_message = await leaderboard_channel.fetch_message(leaderboard_message_id)
+                top_users_cursor = points_coll.find().sort("points", -1).limit(10)
+                top_users = await top_users_cursor.to_list(length=10)
+
+                leaderboard_text = "\n".join(
+                    f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                    for i, user in enumerate(top_users)
+                ) or "No data yet."
+
+                embed = discord.Embed(
+                    title="🏆 Top Clients This Month",
+                    description=leaderboard_text,
+                    color=0x2B2D31,
+                    timestamp=datetime.utcnow()
+                )
+                embed.set_footer(text="Client Leaderboard")
+                await leaderboard_message.edit(embed=embed)
+
+            await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
+
+        except Exception as e:
+            print("❌ Error logging points:", e)
+            await interaction.followup.send("❌ Something went wrong while logging points.", ephemeral=True)
 
 
+# -------------------------
+# Main Cog
+# -------------------------
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -180,88 +238,11 @@ class Tickets(commands.Cog):
         embed.add_field(name="Ticket Name", value=ch.name, inline=True)
         embed.add_field(name="Owner", value=f"<@{ticket_owner_id}>" if ticket_owner_id else "Unknown", inline=True)
         embed.set_footer(text=f"Closed by {ctx.author}")
-        class ClosePanel(discord.ui.View):
-    def __init__(self, owner_tag: str, ticket_owner_id: int | None):
-        super().__init__(timeout=None)
-        self.owner_tag = owner_tag
-        self.ticket_owner_id = ticket_owner_id
-
-    @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
-    async def transcript_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        cog = interaction.client.get_cog("Transcripts")
-        if cog:
-            await cog.generate_transcript(interaction, interaction.channel)
-        else:
-            await interaction.followup.send("❌ Transcript system not available.", ephemeral=True)
-
-    @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
-    async def delete_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await interaction.channel.delete()
-
-    @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="log_points")
-    async def log_points_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        from utils.db import collections
-
-        channel = interaction.channel
-        guild = interaction.guild
-
-        # Check ticket category
-        if channel.category_id != TICKET_CATEGORY_ID:
-            return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
-
-        try:
-            colls = await collections()
-            tickets_coll = colls["tickets"]
-            points_coll = colls["clientPoints"]
-
-            # Get ticket data
-            ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
-            if not ticket_data:
-                return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
-
-            user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
-            user_ids = [uid for uid in user_ids if uid]
-
-            # Add points
-            for uid in user_ids:
-                existing = await points_coll.find_one({"userId": uid})
-                if existing:
-                    await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}})
-                else:
-                    await points_coll.insert_one({"userId": uid, "points": 1})
-
-            # Update leaderboard message
-            leaderboard_channel_id = int(os.getenv("LEADERBOARD_CHANNEL_ID"))
-            leaderboard_message_id = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
-            leaderboard_channel = guild.get_channel(leaderboard_channel_id)
-            if leaderboard_channel:
-                leaderboard_message = await leaderboard_channel.fetch_message(leaderboard_message_id)
-                top_users_cursor = points_coll.find().sort("points", -1).limit(10)
-                top_users = await top_users_cursor.to_list(length=10)
-
-                leaderboard_text = "\n".join(
-                    f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
-                    for i, user in enumerate(top_users)
-                ) or "No data yet."
-
-                embed = discord.Embed(
-                    title="🏆 Top Clients This Month",
-                    description=leaderboard_text,
-                    color=0x2B2D31,
-                    timestamp=datetime.utcnow()
-                )
-                embed.set_footer(text="Client Leaderboard")
-                await leaderboard_message.edit(embed=embed)
-
-            await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
-
-        except Exception as e:
-            print("❌ Error logging points:", e)
-            await interaction.followup.send("❌ Something went wrong while logging points.", ephemeral=True)
+        await ctx.send(embed=embed, view=ClosePanel(str(ctx.author), ticket_owner_id))
 
 
+# -------------------------
+# Cog setup
+# -------------------------
 async def setup(bot):
     await bot.add_cog(Tickets(bot))
