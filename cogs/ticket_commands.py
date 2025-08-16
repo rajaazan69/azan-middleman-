@@ -37,24 +37,32 @@ class TicketCommands(commands.Cog):
         await ctx.send(f"✅ Renamed to `{new_name}`.")
 
     # ---------- ROBLOX USER INFO ----------
+   from discord.ext import commands
+from discord import Embed, ButtonStyle
+from discord.ui import Button, View
+import aiohttp
+from datetime import datetime
+
+class Roblox(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
     @commands.command(name="i", help="Fetches Roblox user info by username.")
     async def i(self, ctx, username: str):
-        import aiohttp
-        from discord import Embed, ButtonStyle
-        from discord.ui import Button, ActionRow
-
-        await ctx.defer()
         try:
             async with aiohttp.ClientSession() as session:
-                # Fetch user
-                async with session.post("https://users.roblox.com/v1/usernames/users",
-                                        json={"usernames":[username], "excludeBannedUsers":False}) as r:
+                # Get user ID
+                async with session.post(
+                    "https://users.roblox.com/v1/usernames/users",
+                    json={"usernames":[username], "excludeBannedUsers":False}
+                ) as r:
                     data = await r.json()
                 user = data['data'][0] if data.get('data') else None
                 if not user:
                     return await ctx.send("❌ User not found.")
 
                 user_id = user['id']
+
                 # Profile
                 async with session.get(f"https://users.roblox.com/v1/users/{user_id}") as r:
                     profile = await r.json()
@@ -63,12 +71,11 @@ class TicketCommands(commands.Cog):
                     followers = (await r.json()).get("count", "N/A")
                 async with session.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count") as r:
                     following = (await r.json()).get("count", "N/A")
-                # Avatar
-                avatar_url = f"https://thumbnails.roblox.com/v1/users/avatar?userIds={user_id}&size=720x720&format=Png&isCircular=false"
 
             created_date = datetime.fromisoformat(profile['created'])
             age_years = round((datetime.utcnow() - created_date).days / 365, 1)
 
+            # Embed
             embed = Embed(title="Roblox User Information", color=0x000000)
             embed.set_thumbnail(url=f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=true")
             embed.add_field(name="Display Name", value=profile['displayName'])
@@ -80,16 +87,18 @@ class TicketCommands(commands.Cog):
             embed.add_field(name="\u200B", value="\u200B")
             embed.add_field(name="Followers", value=str(followers))
             embed.add_field(name="Following", value=str(following))
-            embed.set_footer(text="Roblox Profile Info", icon_url="https://tr.rbxcdn.com/4f82333f5f54d234e95d1f81251a67dc/150/150/Image/Png")
+            embed.set_footer(text="Roblox Profile Info")
             embed.timestamp = datetime.utcnow()
 
+            # Button
             button = Button(label="View Profile", style=ButtonStyle.link, url=f"https://www.roblox.com/users/{user_id}/profile")
-            row = ActionRow(button)
-            await ctx.send(embed=embed, components=[row])
+            view = View()
+            view.add_item(button)
+
+            await ctx.send(embed=embed, view=view)
 
         except Exception as e:
             await ctx.send(f"❌ Failed to fetch user info: {e}")
-
     # ---------- RESET LEADERBOARD ----------
     @commands.command(name="resetlb", help="Resets the client leaderboard.")
     async def resetlb(self, ctx):
