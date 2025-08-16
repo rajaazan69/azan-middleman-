@@ -4,6 +4,8 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 from discord import Embed, ButtonStyle
+from dateutil import parser
+from datetime import datetime
 
 class Roblox(commands.Cog):
     def __init__(self, bot):
@@ -36,8 +38,8 @@ class Roblox(commands.Cog):
                 async with session.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count") as r:
                     following = (await r.json()).get("count", "N/A")
 
-            created_date = datetime.fromisoformat(profile['created'])
-            age_years = round((datetime.utcnow() - created_date).days / 365, 1)
+created_date = parser.isoparse(profile['created'])
+age_years = round((datetime.utcnow() - created_date.replace(tzinfo=None)).days / 365, 1)
 
             # Embed
             embed = Embed(title="Roblox User Information", color=0x000000)
