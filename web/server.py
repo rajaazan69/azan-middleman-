@@ -13,8 +13,11 @@ async def handle_transcript(request: aiohttp.web.Request):
     return aiohttp.web.FileResponse(path)
 
 def make_app():
+    folder = os.path.join(os.getcwd(), "transcripts")
+    os.makedirs(folder, exist_ok=True)  # <-- this creates it if missing
+
     app = aiohttp.web.Application()
     app.router.add_get("/", handle_root)
-    app.router.add_static("/transcripts", path=os.path.join(os.getcwd(), "transcripts"))
+    app.router.add_static("/transcripts", path=folder)
     app.router.add_get("/transcripts/{filename}", handle_transcript)
     return app
