@@ -6,8 +6,8 @@ _db = None
 
 async def get_db():
     global _mongo, _db
-    if _db:
-        return _db
+    if _db is not None:
+    return _db
     uri = os.getenv("MONGO_URI")
     _mongo = AsyncIOMotorClient(uri)
     _db = _mongo["ticketbot"]
