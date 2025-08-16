@@ -23,12 +23,7 @@ async def load_cogs():
     await bot.load_extension("cogs.sticky")
     await bot.load_extension("cogs.servers")
     await bot.load_extension("cogs.moderation")
-    await bot.load_extension("cogs.add")
-    await bot.load_extension("cogs.remove")
-    await bot.load_extension("cogs.i")
-    await bot.load_extension("cogs.rename")
-    await bot.load_extension("cogs.resetlb")
-    await bot.load_extension("cogs.transcript")
+    await bot.load_extension("cogs.ticket_commands")
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
