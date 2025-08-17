@@ -59,17 +59,6 @@ class TicketCommands(commands.Cog):
 
         await ctx.send("✅ Leaderboard has been reset.")
 
-    # ---------- TRANSCRIPT ----------
-    @commands.command(name="transcript", help="Generates transcript of the current ticket.")
-    async def transcript(self, ctx):
-        if ctx.channel.category_id != TICKET_CATEGORY_ID:
-            return await ctx.send("❌ You can only generate transcripts in ticket channels.")
-        cog = self.bot.get_cog("Transcripts")
-        if cog:
-            await cog.generate_transcript(ctx, ctx.channel)
-        else:
-            await ctx.send("❌ Transcript system not available.")
-
 
 async def setup(bot):
     await bot.add_cog(TicketCommands(bot))
