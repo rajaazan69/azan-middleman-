@@ -38,89 +38,103 @@ class Transcripts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def generate_transcript(self, interaction: discord.Interaction, channel: discord.abc.Messageable):
-        if not isinstance(channel, discord.TextChannel):
-            return await interaction.edit_original_response(content="❌ Not a text channel.")
+    async def generate_transcript(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """
+        Core transcript generation logic for both command and button.
+        """
+        try:
+            if not isinstance(channel, discord.TextChannel):
+                return await interaction.response.send_message("❌ Not a text channel.", ephemeral=True)
 
-        # Fetch messages
-        msgs = [m async for m in channel.history(limit=None, oldest_first=True)]
-        participants = {}
-        for m in msgs:
-            if not m.author.bot:
-                participants[m.author.id] = participants.get(m.author.id, 0) + 1
-
-        folder = ensure_transcript_dir()
-        html_bytes = render_html(channel, msgs)
-        html_name = f"{channel.id}.html"
-        txt_name = f"transcript-{channel.id}.txt"
-
-        # Write files
-        with open(os.path.join(folder, html_name), "wb") as f:
-            f.write(html_bytes)
-
-        with open(os.path.join(folder, txt_name), "w", encoding="utf-8") as f:
+            msgs = [m async for m in channel.history(limit=None, oldest_first=True)]
+            participants = {}
             for m in msgs:
-                ts = m.created_at.isoformat()
-                content = m.clean_content or ("[Embed]" if m.embeds else "[Attachment]" if m.attachments else "")
-                f.write(f"[{ts}] {m.author}: {content}\n")
+                if not m.author.bot:
+                    participants[m.author.id] = participants.get(m.author.id, 0) + 1
 
-        # Safe DB insert
-        try:
-            colls = await collections()
-            if colls and colls.get("transcripts"):
-                await colls["transcripts"].insert_one({
-                    "channelId": str(channel.id),
-                    "channelName": channel.name,
-                    "participants": [{"userId": str(uid), "count": c} for uid, c in participants.items()],
-                    "createdAt": dt.datetime.utcnow(),
-                })
+            folder = ensure_transcript_dir()
+            html_bytes = render_html(channel, msgs)
+            html_name = f"{channel.id}.html"
+            txt_name = f"transcript-{channel.id}.txt"
+
+            # Write files
+            with open(os.path.join(folder, html_name), "wb") as f:
+                f.write(html_bytes)
+
+            with open(os.path.join(folder, txt_name), "w", encoding="utf-8") as f:
+                for m in msgs:
+                    ts = m.created_at.isoformat()
+                    content = m.clean_content or ("[Embed]" if m.embeds else "[Attachment]" if m.attachments else "")
+                    f.write(f"[{ts}] {m.author}: {content}\n")
+
+            # Save to DB
+            try:
+                colls = await collections()
+                if colls and colls.get("transcripts"):
+                    await colls["transcripts"].insert_one({
+                        "channelId": str(channel.id),
+                        "channelName": channel.name,
+                        "participants": [{"userId": str(uid), "count": c} for uid, c in participants.items()],
+                        "createdAt": dt.datetime.utcnow(),
+                    })
+            except Exception as e:
+                print(f"❌ Error saving transcript to DB: {e}")
+
+            html_link = f"{BASE_URL}/transcripts/{html_name}"
+
+            # Build embed
+            embed = discord.Embed(
+                title="📄 Transcript Ready",
+                description="Your ticket transcript is now ready.",
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="Ticket Name", value=channel.name, inline=True)
+            embed.add_field(name="Ticket ID", value=str(channel.id), inline=True)
+            p_text = "\n".join([f"<@{uid}> — `{cnt}` messages" for uid, cnt in participants.items()]) or "None"
+            embed.add_field(name="Participants", value=p_text[:1024], inline=False)
+
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(label="View HTML Transcript", style=discord.ButtonStyle.link, url=html_link))
+
+            # Send to user
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        embed=embed,
+                        view=view,
+                        file=discord.File(os.path.join(folder, txt_name)),
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        embed=embed,
+                        view=view,
+                        file=discord.File(os.path.join(folder, txt_name)),
+                        ephemeral=True
+                    )
+            except Exception as e:
+                print(f"❌ Error sending transcript to user: {e}")
+
+            # Log channel
+            try:
+                log = self.bot.get_channel(TRANSCRIPT_CHANNEL_ID)
+                if isinstance(log, discord.TextChannel):
+                    await log.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
+            except Exception as e:
+                print(f"❌ Could not send transcript to log channel: {e}")
+
         except Exception as e:
-            print(f"❌ Error saving transcript to DB: {e}")
-
-        html_link = f"{BASE_URL}/transcripts/{html_name}"
-
-        # Build embed
-        embed = discord.Embed(
-            title="📄 Transcript Ready",
-            description="Your ticket transcript is now ready.",
-            color=EMBED_COLOR
-        )
-        embed.add_field(name="Ticket Name", value=channel.name, inline=True)
-        embed.add_field(name="Ticket ID", value=str(channel.id), inline=True)
-        p_text = "\n".join([f"<@{uid}> — `{cnt}` messages" for uid, cnt in participants.items()]) or "None"
-        embed.add_field(name="Participants", value=p_text[:1024], inline=False)
-
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="View HTML Transcript", style=discord.ButtonStyle.link, url=html_link))
-
-        # -----------------------
-        # Send transcript safely
-        # -----------------------
-        try:
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    embed=embed,
-                    view=view,
-                    file=discord.File(os.path.join(folder, txt_name))
-                )
+                await interaction.response.send_message(f"❌ Error generating transcript: {e}", ephemeral=True)
             else:
-                await interaction.followup.send(
-                    embed=embed,
-                    view=view,
-                    file=discord.File(os.path.join(folder, txt_name))
-                )
-        except Exception as e:
-            print(f"❌ Error sending transcript to user: {e}")
+                await interaction.followup.send(f"❌ Error generating transcript: {e}", ephemeral=True)
+            print(f"❌ Generate transcript failed: {e}")
 
-        # -----------------------
-        # Log channel
-        # -----------------------
-        try:
-            log = self.bot.get_channel(TRANSCRIPT_CHANNEL_ID)
-            if isinstance(log, discord.TextChannel):
-                await log.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
-        except Exception as e:
-            print(f"❌ Could not send transcript to log channel: {e}")
+    # ---------------------------
+    # Button interaction
+    # ---------------------------
+    async def button_transcript(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await self.generate_transcript(interaction, channel)
 
     # ---------------------------
     # Command to generate transcript
@@ -130,14 +144,21 @@ class Transcripts(commands.Cog):
         if not isinstance(ctx.channel, discord.TextChannel):
             return await ctx.send("❌ This command can only be used in text channels.")
 
-        # Wrap ctx as fake Interaction
-        class FakeInteraction:
+        # Directly generate transcript without FakeInteraction
+        class SimpleInteraction:
             def __init__(self, ctx):
                 self.ctx = ctx
-            async def edit_original_response(self, **kwargs):
+                self.response = self
+            async def send_message(self, **kwargs):
                 return await self.ctx.send(**kwargs)
+            async def defer(self, **kwargs):
+                pass
+            async def followup(self, **kwargs):
+                return await self.ctx.send(**kwargs)
+            def is_done(self):
+                return False
 
-        await self.generate_transcript(FakeInteraction(ctx), ctx.channel)
+        await self.generate_transcript(SimpleInteraction(ctx), ctx.channel)
 
 
 async def setup(bot):
