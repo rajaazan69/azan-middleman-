@@ -41,7 +41,7 @@ class Roblox(commands.Cog):
                 # Get avatar headshot URL
                 # --------------------------
                 async with session.get(
-                    f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=true"
+                    f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=420x420&format=Png&isCircular=true"
                 ) as r:
                     thumb_data = await r.json()
                     # The thumbnail API returns an array
