@@ -27,6 +27,17 @@ class TicketCommands(commands.Cog):
         await ch.set_permissions(member, overwrite=None)
         await ctx.send(f"✅ {member.mention} removed.")
 
+    # ---------- DELETE TICKET ----------
+    @commands.command(name="delete", help="Deletes the current ticket channel.")
+    async def delete(self, ctx):
+        ch = ctx.channel
+        if ch.category_id != TICKET_CATEGORY_ID:
+            return await ctx.send("❌ You can only delete ticket channels.")
+        try:
+            await ch.delete()
+        except Exception as e:
+            await ctx.send(f"❌ Failed to delete channel: {e}")
+
     # ---------- RENAME TICKET ----------
     @commands.command(name="rename", help="Renames the current ticket channel.")
     async def rename(self, ctx, *, new_name: str):
@@ -35,6 +46,7 @@ class TicketCommands(commands.Cog):
             return await ctx.send("❌ You can only rename ticket channels.")
         await ch.edit(name=new_name)
         await ctx.send(f"✅ Renamed to `{new_name}`.")
+
     # ---------- RESET LEADERBOARD ----------
     @commands.command(name="resetlb", help="Resets the client leaderboard.")
     async def resetlb(self, ctx):
@@ -58,7 +70,6 @@ class TicketCommands(commands.Cog):
             pass
 
         await ctx.send("✅ Leaderboard has been reset.")
-
 
 async def setup(bot):
     await bot.add_cog(TicketCommands(bot))
