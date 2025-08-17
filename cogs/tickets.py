@@ -97,38 +97,44 @@ class TicketPanelView(discord.ui.View):
 # -------------------------
 # Close ticket view
 # -------------------------
+import discord
+from datetime import datetime
+from utils.db import collections
+from utils.constants import TICKET_CATEGORY_ID, LB_CHANNEL_ID, LB_MESSAGE_ID
+
 class ClosePanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
+    @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
     async def transcript_btn(self, interaction: discord.Interaction, _):
-    try:
-        # Defer without editing original view
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            # Defer without editing original view
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True, thinking=True)
 
-        cog = interaction.client.get_cog("Transcripts")
-        if not cog:
-            return await interaction.followup.send(
-                "❌ Transcript system not loaded.", ephemeral=True
-            )
+            cog = interaction.client.get_cog("Transcripts")
+            if not cog:
+                return await interaction.followup.send(
+                    "❌ Transcript system not loaded.", ephemeral=True
+                )
 
-        # Generate transcript and send as a new message (keep ClosePanel)
-        transcript_file = await cog.generate_transcript(interaction, interaction.channel)
-        await interaction.followup.send(
-            "📄 Transcript generated!", file=transcript_file, ephemeral=True
-        )
-
-    except Exception as e:
-        print("Transcript Button Error:", e)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(
-                f"❌ Error generating transcript: {e}", ephemeral=True
-            )
-        else:
+            # Generate transcript and send as a new message (keep ClosePanel visible)
+            transcript_file = await cog.generate_transcript(interaction, interaction.channel)
             await interaction.followup.send(
-                f"❌ Error generating transcript: {e}", ephemeral=True
+                "📄 Transcript generated!", file=transcript_file, ephemeral=True
             )
+
+        except Exception as e:
+            print("Transcript Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"❌ Error generating transcript: {e}", ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ Error generating transcript: {e}", ephemeral=True
+                )
 
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
@@ -215,7 +221,6 @@ class ClosePanel(discord.ui.View):
                 await interaction.response.send_message(f"❌ Something went wrong: {e}", ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ Something went wrong: {e}", ephemeral=True)
-
 # -------------------------
 # Main Cog
 # -------------------------
