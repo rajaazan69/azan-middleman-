@@ -42,6 +42,7 @@ class Transcripts(commands.Cog):
         if not isinstance(channel, discord.TextChannel):
             return await interaction.edit_original_response(content="❌ Not a text channel.")
 
+        # Fetch messages
         msgs = [m async for m in channel.history(limit=None, oldest_first=True)]
         participants = {}
         for m in msgs:
@@ -92,24 +93,28 @@ class Transcripts(commands.Cog):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="View HTML Transcript", style=discord.ButtonStyle.link, url=html_link))
 
+        # -----------------------
         # Send transcript safely
+        # -----------------------
         try:
-    if not interaction.response.is_done():
-        await interaction.response.send_message(
-            embed=embed,
-            view=view,
-            file=discord.File(os.path.join(folder, txt_name))
-        )
-    else:
-        await interaction.followup.send(
-            embed=embed,
-            view=view,
-            file=discord.File(os.path.join(folder, txt_name))
-        )
-except Exception as e:
-    print(f"❌ Error sending transcript to user: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    embed=embed,
+                    view=view,
+                    file=discord.File(os.path.join(folder, txt_name))
+                )
+            else:
+                await interaction.followup.send(
+                    embed=embed,
+                    view=view,
+                    file=discord.File(os.path.join(folder, txt_name))
+                )
+        except Exception as e:
+            print(f"❌ Error sending transcript to user: {e}")
 
+        # -----------------------
         # Log channel
+        # -----------------------
         try:
             log = self.bot.get_channel(TRANSCRIPT_CHANNEL_ID)
             if isinstance(log, discord.TextChannel):
@@ -125,7 +130,7 @@ except Exception as e:
         if not isinstance(ctx.channel, discord.TextChannel):
             return await ctx.send("❌ This command can only be used in text channels.")
 
-        # For command, wrap ctx as fake Interaction
+        # Wrap ctx as fake Interaction
         class FakeInteraction:
             def __init__(self, ctx):
                 self.ctx = ctx
