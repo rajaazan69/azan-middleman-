@@ -147,11 +147,10 @@ class ClosePanel(discord.ui.View):
             # -----------------------
             # Check ticket category
             # -----------------------
-            parent_id = getattr(channel, "parent_id", None)
-            if parent_id != TICKET_CATEGORY_ID:
-                return await interaction.followup.send(
-                    "❌ This button can only be used inside ticket channels.", ephemeral=True
-                )
+            if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
+    return await interaction.followup.send(
+        "❌ This button can only be used inside ticket channels.", ephemeral=True
+    )
 
             # -----------------------
             # Fetch DB collections
