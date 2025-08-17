@@ -62,3 +62,7 @@ class TicketPoints(commands.Cog):
                     print("❌ Error updating leaderboard:", e)
 
         return user_ids  # Return who got points for followup message
+        
+        
+        async def setup(bot):
+    await bot.add_cog(TicketPoints(bot))
