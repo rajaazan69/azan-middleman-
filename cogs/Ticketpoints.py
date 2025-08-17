@@ -1,3 +1,14 @@
+import os
+from datetime import datetime
+import discord
+from discord.ext import commands
+from utils.constants import TICKET_CATEGORY_ID
+from utils.db import collections
+
+class TicketPoints(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
     async def log_points(self, channel: discord.TextChannel):
         """
         Log points for the ticket users and update leaderboard.
@@ -70,3 +81,10 @@
             print("❌ Error updating leaderboard:", e)
 
         return user_ids  # Return who got points for followup messages
+
+
+# -------------------------
+# Cog setup
+# -------------------------
+async def setup(bot):
+    await bot.add_cog(TicketPoints(bot))
