@@ -3,7 +3,7 @@ import html
 import datetime as dt
 import discord
 from discord.ext import commands
-from utils.constants import BASE_URL, EMBED_COLOR, TRANSCRIPT_CHANNEL_ID, LEADERBOARD_CHANNEL_ID, LEADERBOARD_MESSAGE_ID
+from utils.constants import BASE_URL, EMBED_COLOR, TRANSCRIPT_CHANNEL_ID
 from utils.db import collections
 
 def ensure_transcript_dir():
@@ -12,7 +12,6 @@ def ensure_transcript_dir():
     return path
 
 def render_html(channel: discord.TextChannel, messages: list[discord.Message]) -> bytes:
-    # simple clean HTML similar to discord transcript feel
     lines = []
     for m in messages:
         ts = dt.datetime.fromtimestamp(m.created_at.timestamp()).isoformat()
@@ -34,11 +33,13 @@ div{{padding:6px 8px;border-bottom:1px solid #373a3f}}</style></head>
 <body><h2>Transcript — {html.escape(channel.name)}</h2>{body}</body></html>"""
     return html_doc.encode("utf-8")
 
+
 class Transcripts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     async def generate_transcript(self, interaction: discord.Interaction, channel: discord.abc.Messageable):
+        # Existing logic unchanged
         if not isinstance(channel, discord.TextChannel):
             return await interaction.edit_original_response(content="❌ Not a text channel.")
         await channel.trigger_typing()
@@ -88,37 +89,21 @@ class Transcripts(commands.Cog):
         if isinstance(log, discord.TextChannel):
             await log.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
 
-    async def log_points(self, interaction: discord.Interaction):
-        colls = await collections()
-        ch = interaction.channel
-        if not isinstance(ch, discord.TextChannel):
-            return await interaction.edit_original_response(content="❌ Not a ticket channel.")
+    # ---------------------------
+    # Command to generate transcript
+    # ---------------------------
+    @commands.command(name="transcript", help="Generates a transcript for this ticket.")
+    async def transcript_cmd(self, ctx: commands.Context):
+        if not isinstance(ctx.channel, discord.TextChannel):
+            return await ctx.send("❌ This command can only be used in text channels.")
+        # For command, wrap ctx as fake Interaction with edit_original_response
+        class FakeInteraction:
+            def __init__(self, ctx):
+                self.ctx = ctx
+            async def edit_original_response(self, **kwargs):
+                return await ctx.send(**kwargs)
+        await self.generate_transcript(FakeInteraction(ctx), ctx.channel)
 
-        ticket = await colls["tickets"].find_one({"channelId": str(ch.id)})
-        if not ticket:
-            return await interaction.edit_original_response(content="❌ Could not find ticket data.")
-
-        for uid in [ticket.get("user1"), ticket.get("user2")]:
-            if not uid:
-                continue
-            await colls["clientPoints"].update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
-
-        if LEADERBOARD_CHANNEL_ID and LEADERBOARD_MESSAGE_ID:
-            lb_ch = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
-            try:
-                msg = await lb_ch.fetch_message(LEADERBOARD_MESSAGE_ID)  # type: ignore
-                top = colls["clientPoints"].find().sort("points", -1).limit(10)
-                lines = []
-                rank = 1
-                async for user in top:
-                    lines.append(f"**#{rank}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points']!=1 else ''}")
-                    rank += 1
-                embed = discord.Embed(title="🏆 Top Clients This Month", description="\n".join(lines) or "No data yet.", color=0x2B2D31)
-                await msg.edit(embed=embed)
-            except Exception:
-                pass
-
-        await interaction.edit_original_response(content="✅ Logged 1 point for ticket users.")
 
 async def setup(bot):
     await bot.add_cog(Transcripts(bot))
