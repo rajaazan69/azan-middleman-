@@ -107,7 +107,6 @@ class ClosePanel(discord.ui.View):
     @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
     async def transcript_btn(self, interaction: discord.Interaction, _):
         try:
-            # defer safely
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
@@ -115,7 +114,6 @@ class ClosePanel(discord.ui.View):
             if not cog:
                 return await interaction.followup.send("❌ Transcript system not loaded.", ephemeral=True)
 
-            # call generate_transcript safely
             await cog.generate_transcript(interaction, interaction.channel)
 
         except Exception as e:
@@ -137,53 +135,103 @@ class ClosePanel(discord.ui.View):
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
     async def log_points_btn(self, interaction: discord.Interaction, _):
         try:
+            # -----------------------
+            # Defer immediately
+            # -----------------------
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            cog = interaction.client.get_cog("TicketPoints")
-            if not cog:
-                return await interaction.followup.send("❌ TicketPoints cog not loaded.", ephemeral=True)
+            channel = interaction.channel
+            guild = interaction.guild
 
-            # Try logging points and updating leaderboard
-            user_ids = await cog.log_points(interaction.channel)
-
-            if not user_ids:
+            # -----------------------
+            # Check ticket category
+            # -----------------------
+            parent_id = getattr(channel, "parent_id", None)
+            if parent_id != TICKET_CATEGORY_ID:
                 return await interaction.followup.send(
-                    "❌ Could not log points for this ticket.", ephemeral=True
+                    "❌ This button can only be used inside ticket channels.", ephemeral=True
                 )
 
-            await interaction.followup.send(
-                f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True
-            )
+            # -----------------------
+            # Fetch DB collections
+            # -----------------------
+            colls = await collections()
+            tickets_coll = colls["tickets"]
+            points_coll = colls["clientPoints"]
 
-            # -------------------------------
-            # Single-use fallback: create LB
-            # -------------------------------
-            lb_channel_id = 1402387584860033106  # Hardcoded channel
-            lb_message_id = 1402392182425387050  # Hardcoded message (replace with new once created)
-            guild = interaction.guild
-            channel = guild.get_channel(lb_channel_id)
+            # -----------------------
+            # Get ticket users
+            # -----------------------
+            ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
+            if not ticket_data:
+                return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
 
-            # Try to fetch existing message
-            leaderboard_message = None
+            user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
+            user_ids = [uid for uid in user_ids if uid]
+
+            if not user_ids:
+                return await interaction.followup.send("❌ No users to log points for.", ephemeral=True)
+
+            # -----------------------
+            # Add points (upsert)
+            # -----------------------
+            for uid in user_ids:
+                await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
+
+            # -----------------------
+            # Update leaderboard
+            # -----------------------
             try:
-                leaderboard_message = await channel.fetch_message(lb_message_id)
-            except Exception:
-                # If fetch fails, create a new leaderboard message once
-                embed = discord.Embed(
+                lb_channel_id = 1402387584860033106  # hardcoded channel
+                lb_message_id = 1402392182425387050  # hardcoded message
+                lb_channel = guild.get_channel(lb_channel_id)
+                if not lb_channel:
+                    return await interaction.followup.send("❌ Leaderboard channel not found.", ephemeral=True)
+
+                try:
+                    lb_message = await lb_channel.fetch_message(lb_message_id)
+                except Exception:
+                    # Create a new leaderboard message if it doesn't exist
+                    embed = Embed(
+                        title="🏆 Top Clients This Month",
+                        description="No data yet.",
+                        color=0x2B2D31,
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_footer(text="Client Leaderboard")
+                    lb_message = await lb_channel.send(embed=embed)
+                    await interaction.followup.send(
+                        f"ℹ️ Created a new leaderboard message! ID: {lb_message.id}", ephemeral=True
+                    )
+
+                # Fetch top 10 users
+                top_cursor = points_coll.find().sort("points", -1).limit(10)
+                top_users = await top_cursor.to_list(length=10)
+                leaderboard_text = "\n".join(
+                    f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                    for i, user in enumerate(top_users)
+                ) or "No data yet."
+
+                embed = Embed(
                     title="🏆 Top Clients This Month",
-                    description="No data yet.",
+                    description=leaderboard_text,
                     color=0x2B2D31,
                     timestamp=datetime.utcnow()
                 )
                 embed.set_footer(text="Client Leaderboard")
-                leaderboard_message = await channel.send(embed=embed)
-                await interaction.followup.send(
-                    f"ℹ️ Created a new leaderboard message! ID: {leaderboard_message.id}", ephemeral=True
-                )
-                # Optionally: update `lb_message_id` in DB or hardcode for future runs
+                await lb_message.edit(embed=embed)
 
-            # At this point, leaderboard_message exists and can be updated by log_points
+            except Exception as e:
+                print("❌ Error updating leaderboard:", e)
+
+            # -----------------------
+            # Send confirmation
+            # -----------------------
+            await interaction.followup.send(
+                f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True
+            )
+
         except Exception as e:
             print("Log Points Button Error:", e)
             if not interaction.response.is_done():
