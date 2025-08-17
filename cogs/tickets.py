@@ -132,26 +132,28 @@ class ClosePanel(discord.ui.View):
             print("Delete Button Error:", e)
 
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
-    async def log_points_btn(self, interaction: discord.Interaction, _):
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+async def log_points_btn(self, interaction: discord.Interaction, _):
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
 
-            cog = interaction.client.get_cog("TicketPoints")
-            if not cog:
-                return await interaction.followup.send("❌ TicketPoints cog not loaded.", ephemeral=True)
+        cog = interaction.client.get_cog("TicketPoints")
+        if not cog:
+            return await interaction.followup.send("❌ TicketPoints cog not loaded.", ephemeral=True)
 
-            # call the cog’s log_points method
-            await cog.log_points(interaction)
+        # Pass the channel, not the interaction
+        user_ids = await cog.log_points(interaction.channel)
+        if not user_ids:
+            return await interaction.followup.send("❌ Could not log points for this ticket.", ephemeral=True)
 
-        except Exception as e:
-            print("Log Points Button Error:", e)
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
+        await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
 
-
+    except Exception as e:
+        print("Log Points Button Error:", e)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
 # -------------------------
 # Main Cog
 # -------------------------
