@@ -42,7 +42,7 @@ class Transcripts(commands.Cog):
         # Existing logic unchanged
         if not isinstance(channel, discord.TextChannel):
             return await interaction.edit_original_response(content="❌ Not a text channel.")
-        await channel.trigger_typing()
+        
 
         msgs = [m async for m in channel.history(limit=None, oldest_first=True)]
         participants = {}
