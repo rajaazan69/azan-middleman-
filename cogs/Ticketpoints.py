@@ -1,9 +1,12 @@
-import os
 from datetime import datetime
 import discord
 from discord.ext import commands
 from utils.constants import TICKET_CATEGORY_ID
 from utils.db import collections
+
+# Hardcoded leaderboard IDs
+LEADERBOARD_CHANNEL_ID = 1402387584860033106
+LEADERBOARD_MESSAGE_ID = 1402392182425387050
 
 class TicketPoints(commands.Cog):
     def __init__(self, bot):
@@ -38,25 +41,19 @@ class TicketPoints(commands.Cog):
         # Add points
         for uid in user_ids:
             await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
+            print(f"✅ Added 1 point for user {uid}")
 
         # Update leaderboard
-        try:
-            lb_channel_id = int(os.getenv("LEADERBOARD_CHANNEL_ID"))
-            lb_message_id = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
-        except Exception as e:
-            print(f"❌ Invalid LEADERBOARD_CHANNEL_ID or LEADERBOARD_MESSAGE_ID in .env: {e}")
-            return user_ids
-
         guild = channel.guild
-        leaderboard_channel = guild.get_channel(lb_channel_id)
+        leaderboard_channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
         if not leaderboard_channel:
-            print(f"❌ Could not find leaderboard channel with ID {lb_channel_id}")
+            print(f"❌ Could not find leaderboard channel with ID {LEADERBOARD_CHANNEL_ID}")
             return user_ids
 
         try:
-            leaderboard_message = await leaderboard_channel.fetch_message(lb_message_id)
+            leaderboard_message = await leaderboard_channel.fetch_message(LEADERBOARD_MESSAGE_ID)
         except Exception as e:
-            print(f"❌ Could not fetch leaderboard message with ID {lb_message_id}: {e}")
+            print(f"❌ Could not fetch leaderboard message with ID {LEADERBOARD_MESSAGE_ID}: {e}")
             return user_ids
 
         # Build leaderboard embed
@@ -77,6 +74,7 @@ class TicketPoints(commands.Cog):
             )
             embed.set_footer(text="Client Leaderboard")
             await leaderboard_message.edit(embed=embed)
+            print("✅ Leaderboard updated successfully")
         except Exception as e:
             print("❌ Error updating leaderboard:", e)
 
