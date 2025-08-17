@@ -101,7 +101,6 @@ class ClosePanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
     async def transcript_btn(self, interaction: discord.Interaction, _):
     try:
         # Defer without editing original view
