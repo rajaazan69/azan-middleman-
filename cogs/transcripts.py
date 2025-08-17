@@ -94,11 +94,16 @@ class Transcripts(commands.Cog):
 
         # Send transcript safely
         try:
-            await interaction.edit_original_response(embed=embed, view=view, attachments=[discord.File(os.path.join(folder, txt_name))])
-        except Exception:
-            # fallback for commands (FakeInteraction)
-            if hasattr(interaction, "ctx"):
-                await interaction.ctx.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
+    if not interaction.response.is_done():
+        await interaction.response.send_message(
+            embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name))
+        )
+    else:
+        await interaction.followup.send(
+            embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name))
+        )
+except Exception as e:
+    print(f"❌ Error sending transcript to user: {e}")
 
         # Log channel
         try:
