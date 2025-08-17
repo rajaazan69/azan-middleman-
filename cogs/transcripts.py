@@ -94,8 +94,8 @@ class Transcripts(commands.Cog):
 
         # Send transcript safely
         try:
-    if not interaction.response.is_done():
-        await interaction.response.send_message(
+           if not interaction.response.is_done():
+               await interaction.response.send_message(
             embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name))
         )
     else:
