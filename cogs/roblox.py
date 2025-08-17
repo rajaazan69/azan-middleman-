@@ -17,7 +17,7 @@ class Roblox(commands.Cog):
                 # Get user ID
                 async with session.post(
                     "https://users.roblox.com/v1/usernames/users",
-                    json={"usernames":[username], "excludeBannedUsers":False}
+                    json={"usernames": [username], "excludeBannedUsers": False}
                 ) as r:
                     data = await r.json()
 
@@ -37,15 +37,14 @@ class Roblox(commands.Cog):
                 async with session.get(f"https://friends.roblox.com/v1/users/{user_id}/followings/count") as r:
                     following = (await r.json()).get("count", "N/A")
 
-                # --------------------------
                 # Parse creation date safely
-                # --------------------------
                 created_date = parser.isoparse(profile['created'])
                 age_years = round((datetime.utcnow() - created_date.replace(tzinfo=None)).days / 365, 1)
 
                 # Embed
                 embed = Embed(title="Roblox User Information", color=0x000000)
-                embed.set_thumbnail(url=f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=true")
+                # FIXED AVATAR: always shows user avatar
+                embed.set_thumbnail(url=f"https://thumbnails.roblox.com/v1/users/avatar?userIds={user_id}&size=150x150&format=Png")
                 embed.add_field(name="Display Name", value=profile['displayName'])
                 embed.add_field(name="Username", value=profile['name'])
                 embed.add_field(name="User ID", value=str(user_id))
