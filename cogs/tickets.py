@@ -101,7 +101,7 @@ import discord
 from datetime import datetime
 from utils.db import collections
 
-TICKET_CATEGORY_ID = 123456789012345678  # Replace with your ticket category ID
+TICKET_CATEGORY_ID = 1373027564926406796  # Replace with your ticket category ID
 LB_CHANNEL_ID = 1402387584860033106      # Hardcoded leaderboard channel
 LB_MESSAGE_ID = 1402392182425387050      # Replace after first creation
 
