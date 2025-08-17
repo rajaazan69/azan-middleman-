@@ -103,22 +103,33 @@ class ClosePanel(discord.ui.View):
 
     @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
     async def transcript_btn(self, interaction: discord.Interaction, _):
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+    try:
+        # Defer without editing original view
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
 
-            cog = interaction.client.get_cog("Transcripts")
-            if not cog:
-                return await interaction.followup.send("❌ Transcript system not loaded.", ephemeral=True)
+        cog = interaction.client.get_cog("Transcripts")
+        if not cog:
+            return await interaction.followup.send(
+                "❌ Transcript system not loaded.", ephemeral=True
+            )
 
-            await cog.generate_transcript(interaction, interaction.channel)
+        # Generate transcript and send as a new message (keep ClosePanel)
+        transcript_file = await cog.generate_transcript(interaction, interaction.channel)
+        await interaction.followup.send(
+            "📄 Transcript generated!", file=transcript_file, ephemeral=True
+        )
 
-        except Exception as e:
-            print("Transcript Button Error:", e)
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Error generating transcript: {e}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Error generating transcript: {e}", ephemeral=True)
+    except Exception as e:
+        print("Transcript Button Error:", e)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                f"❌ Error generating transcript: {e}", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"❌ Error generating transcript: {e}", ephemeral=True
+            )
 
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
