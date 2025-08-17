@@ -4,6 +4,7 @@ from datetime import datetime
 from discord.ext import commands
 from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID
 from utils.db import collections
+from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID, LB_CHANNEL_ID, LB_MESSAGE_ID
 
 # -------------------------
 # Ticket request panel view
