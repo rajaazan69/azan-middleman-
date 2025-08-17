@@ -104,31 +104,52 @@ class ClosePanel(discord.ui.View):
     @discord.ui.button(label="TRANSCRIPT", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
     async def transcript_btn(self, interaction: discord.Interaction, _):
         try:
-            await interaction.response.defer(ephemeral=True)
+            # defer safely
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+
             cog = interaction.client.get_cog("Transcripts")
             if not cog:
                 return await interaction.followup.send("❌ Transcript system not loaded.", ephemeral=True)
+
+            # call generate_transcript safely
             await cog.generate_transcript(interaction, interaction.channel)
+
         except Exception as e:
-            await interaction.followup.send(f"❌ Error generating transcript: {e}", ephemeral=True)
             print("Transcript Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Error generating transcript: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Error generating transcript: {e}", ephemeral=True)
 
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
-        await interaction.response.defer()
-        await interaction.channel.delete()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+            await interaction.channel.delete()
+        except Exception as e:
+            print("Delete Button Error:", e)
 
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
     async def log_points_btn(self, interaction: discord.Interaction, _):
         try:
-            await interaction.response.defer(ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+
             cog = interaction.client.get_cog("TicketPoints")
             if not cog:
                 return await interaction.followup.send("❌ TicketPoints cog not loaded.", ephemeral=True)
+
+            # call the cog’s log_points method
             await cog.log_points(interaction)
+
         except Exception as e:
-            await interaction.followup.send(f"❌ Error logging points: {e}", ephemeral=True)
             print("Log Points Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
 
 
 # -------------------------
