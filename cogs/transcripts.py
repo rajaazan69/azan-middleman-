@@ -39,10 +39,8 @@ class Transcripts(commands.Cog):
         self.bot = bot
 
     async def generate_transcript(self, interaction: discord.Interaction, channel: discord.abc.Messageable):
-        # Existing logic unchanged
         if not isinstance(channel, discord.TextChannel):
             return await interaction.edit_original_response(content="❌ Not a text channel.")
-        
 
         msgs = [m async for m in channel.history(limit=None, oldest_first=True)]
         participants = {}
@@ -55,6 +53,7 @@ class Transcripts(commands.Cog):
         html_name = f"{channel.id}.html"
         txt_name = f"transcript-{channel.id}.txt"
 
+        # Write files
         with open(os.path.join(folder, html_name), "wb") as f:
             f.write(html_bytes)
 
@@ -64,17 +63,27 @@ class Transcripts(commands.Cog):
                 content = m.clean_content or ("[Embed]" if m.embeds else "[Attachment]" if m.attachments else "")
                 f.write(f"[{ts}] {m.author}: {content}\n")
 
-        colls = await collections()
-        await colls["transcripts"].insert_one({
-            "channelId": str(channel.id),
-            "channelName": channel.name,
-            "participants": [{"userId": str(uid), "count": c} for uid, c in participants.items()],
-            "createdAt": dt.datetime.utcnow(),
-        })
+        # Safe DB insert
+        try:
+            colls = await collections()
+            if colls and colls.get("transcripts"):
+                await colls["transcripts"].insert_one({
+                    "channelId": str(channel.id),
+                    "channelName": channel.name,
+                    "participants": [{"userId": str(uid), "count": c} for uid, c in participants.items()],
+                    "createdAt": dt.datetime.utcnow(),
+                })
+        except Exception as e:
+            print(f"❌ Error saving transcript to DB: {e}")
 
         html_link = f"{BASE_URL}/transcripts/{html_name}"
 
-        embed = discord.Embed(title="📄 Transcript Ready", description="Your ticket transcript is now ready.", color=EMBED_COLOR)
+        # Build embed
+        embed = discord.Embed(
+            title="📄 Transcript Ready",
+            description="Your ticket transcript is now ready.",
+            color=EMBED_COLOR
+        )
         embed.add_field(name="Ticket Name", value=channel.name, inline=True)
         embed.add_field(name="Ticket ID", value=str(channel.id), inline=True)
         p_text = "\n".join([f"<@{uid}> — `{cnt}` messages" for uid, cnt in participants.items()]) or "None"
@@ -83,11 +92,21 @@ class Transcripts(commands.Cog):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="View HTML Transcript", style=discord.ButtonStyle.link, url=html_link))
 
-        await interaction.edit_original_response(embed=embed, view=view, attachments=[discord.File(os.path.join(folder, txt_name))])
+        # Send transcript safely
+        try:
+            await interaction.edit_original_response(embed=embed, view=view, attachments=[discord.File(os.path.join(folder, txt_name))])
+        except Exception:
+            # fallback for commands (FakeInteraction)
+            if hasattr(interaction, "ctx"):
+                await interaction.ctx.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
 
-        log = self.bot.get_channel(TRANSCRIPT_CHANNEL_ID)
-        if isinstance(log, discord.TextChannel):
-            await log.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
+        # Log channel
+        try:
+            log = self.bot.get_channel(TRANSCRIPT_CHANNEL_ID)
+            if isinstance(log, discord.TextChannel):
+                await log.send(embed=embed, view=view, file=discord.File(os.path.join(folder, txt_name)))
+        except Exception as e:
+            print(f"❌ Could not send transcript to log channel: {e}")
 
     # ---------------------------
     # Command to generate transcript
@@ -96,12 +115,14 @@ class Transcripts(commands.Cog):
     async def transcript_cmd(self, ctx: commands.Context):
         if not isinstance(ctx.channel, discord.TextChannel):
             return await ctx.send("❌ This command can only be used in text channels.")
-        # For command, wrap ctx as fake Interaction with edit_original_response
+
+        # For command, wrap ctx as fake Interaction
         class FakeInteraction:
             def __init__(self, ctx):
                 self.ctx = ctx
             async def edit_original_response(self, **kwargs):
-                return await ctx.send(**kwargs)
+                return await self.ctx.send(**kwargs)
+
         await self.generate_transcript(FakeInteraction(ctx), ctx.channel)
 
 
