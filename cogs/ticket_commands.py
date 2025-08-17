@@ -50,8 +50,8 @@ class TicketCommands(commands.Cog):
 
         # Update leaderboard message
         try:
-            leaderboard_channel = ctx.guild.get_channel(int(os.getenv("LEADERBOARD_CHANNEL_ID")))
-            leaderboard_message = await leaderboard_channel.fetch_message(int(os.getenv("LEADERBOARD_MESSAGE_ID")))
+            leaderboard_channel = ctx.guild.get_channel(int(os.getenv("LB_CHANNEL_ID")))
+            leaderboard_message = await leaderboard_channel.fetch_message(int(os.getenv("LB_MESSAGE_ID")))
             embed = discord.Embed(title="🏆 Client Leaderboard", description="No points recorded yet!", color=0xFFD700)
             await leaderboard_message.edit(embed=embed)
         except:
