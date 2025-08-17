@@ -131,7 +131,7 @@ class ClosePanel(discord.ui.View):
         except Exception as e:
             print("Delete Button Error:", e)
 
-    @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
+@discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
 async def log_points_btn(self, interaction: discord.Interaction, _):
     try:
         if not interaction.response.is_done():
