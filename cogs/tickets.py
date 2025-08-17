@@ -138,18 +138,41 @@ class ClosePanel(discord.ui.View):
             print("Delete Button Error:", e)
 
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
-    async def log_points_btn(self, interaction: discord.Interaction, _):
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+async def log_points_btn(self, interaction: discord.Interaction, _):
+    try:
+        # Defer the response
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
 
-            channel = interaction.channel
-            guild = interaction.guild
+        channel = interaction.channel
+        guild = interaction.guild
 
-            if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
-                return await interaction.followup.send(
-                    "❌ This button can only be used inside ticket channels.", ephemeral=True
-                )
+        # Ensure it's a ticket channel
+        if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
+            return await interaction.followup.send(
+                "❌ This button can only be used inside ticket channels.", ephemeral=True
+            )
+
+        # Get the TicketPoints cog
+        cog = interaction.client.get_cog("TicketPoints")
+        if not cog:
+            return await interaction.followup.send("❌ TicketPoints cog not loaded.", ephemeral=True)
+
+        # Log points & update leaderboard
+        user_ids = await cog.log_points(channel)
+        if not user_ids:
+            return await interaction.followup.send("❌ Could not log points for this ticket.", ephemeral=True)
+
+        await interaction.followup.send(
+            f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True
+        )
+
+    except Exception as e:
+        print("Log Points Button Error:", e)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ Something went wrong: {e}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Something went wrong: {e}", ephemeral=True)
 
             # -----------------------
             # Fetch DB collections
