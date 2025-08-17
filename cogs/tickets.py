@@ -119,11 +119,8 @@ class ClosePanel(discord.ui.View):
                     "❌ Transcript system not loaded.", ephemeral=True
                 )
 
-            # Generate transcript and send as a new message (keep ClosePanel visible)
-            transcript_file = await cog.generate_transcript(interaction, interaction.channel)
-            await interaction.followup.send(
-                "📄 Transcript generated!", file=transcript_file, ephemeral=True
-            )
+            # ✅ Option A: just call generate_transcript, it handles sending
+            await cog.generate_transcript(interaction, interaction.channel)
 
         except Exception as e:
             print("Transcript Button Error:", e)
