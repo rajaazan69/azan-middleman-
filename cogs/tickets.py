@@ -99,6 +99,8 @@ class TicketPanelView(discord.ui.View):
 # -------------------------
 import discord
 from datetime import datetime
+from utils.constants import TICKET_CATEGORY_ID
+from utils.db import collections
 
 class ClosePanel(discord.ui.View):
     def __init__(self):
@@ -145,13 +147,12 @@ class ClosePanel(discord.ui.View):
             guild = interaction.guild
 
             # -----------------------
-# Check ticket category
-# -----------------------
-if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
-    msg = await interaction.followup.send(
-        "❌ This button can only be used inside ticket channels.", ephemeral=True
-    )
-    return msg
+            # Check ticket category
+            # -----------------------
+            if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
+                return await interaction.followup.send(
+                    "❌ This button can only be used inside ticket channels.", ephemeral=True
+                )
 
             # -----------------------
             # Fetch DB collections
@@ -183,6 +184,8 @@ if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET
             # Update leaderboard
             # -----------------------
             try:
+                from discord import Embed  # Ensure Embed is imported here
+
                 lb_channel_id = 1402387584860033106  # hardcoded channel
                 lb_message_id = 1402392182425387050  # hardcoded message
                 lb_channel = guild.get_channel(lb_channel_id)
