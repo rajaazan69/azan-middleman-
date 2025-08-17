@@ -38,6 +38,16 @@ class Roblox(commands.Cog):
                     following = (await r.json()).get("count", "N/A")
 
                 # --------------------------
+                # Get avatar headshot URL
+                # --------------------------
+                async with session.get(
+                    f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=true"
+                ) as r:
+                    thumb_data = await r.json()
+                    # The thumbnail API returns an array
+                    image_url = thumb_data["data"][0]["imageUrl"] if thumb_data.get("data") else None
+
+                # --------------------------
                 # Parse creation date safely
                 # --------------------------
                 created_date = parser.isoparse(profile['created'])
@@ -45,9 +55,8 @@ class Roblox(commands.Cog):
 
                 # Embed
                 embed = Embed(title="Roblox User Information", color=0x000000)
-                embed.set_thumbnail(
-                    url=f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=true"
-                )
+                if image_url:
+                    embed.set_thumbnail(url=image_url)
                 embed.add_field(name="Display Name", value=profile['displayName'])
                 embed.add_field(name="Username", value=profile['name'])
                 embed.add_field(name="User ID", value=str(user_id))
