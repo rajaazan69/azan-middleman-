@@ -1,6 +1,6 @@
-from datetime import datetime
 import discord
 from discord.ext import commands
+from datetime import datetime
 from utils.constants import TICKET_CATEGORY_ID
 from utils.db import collections
 
@@ -21,9 +21,10 @@ class TicketPoints(commands.Cog):
         tickets_coll = colls["tickets"]
         points_coll = colls["clientPoints"]
 
+        # Check if this is a ticket channel
         if channel.category_id != TICKET_CATEGORY_ID:
             print(f"❌ Channel {channel.id} is not a ticket channel.")
-            return None  # Not a ticket channel
+            return None
 
         # Get ticket data
         ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
@@ -38,23 +39,29 @@ class TicketPoints(commands.Cog):
             print(f"❌ No users found in ticket {channel.id} to log points for.")
             return None
 
-        # Add points
+        # Add points to DB
         for uid in user_ids:
             await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
-            print(f"✅ Added 1 point for user {uid}")
 
-        # Update leaderboard
         guild = channel.guild
         leaderboard_channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
         if not leaderboard_channel:
             print(f"❌ Could not find leaderboard channel with ID {LEADERBOARD_CHANNEL_ID}")
             return user_ids
 
+        # Try fetching the leaderboard message; if missing, create a new one
         try:
             leaderboard_message = await leaderboard_channel.fetch_message(LEADERBOARD_MESSAGE_ID)
-        except Exception as e:
-            print(f"❌ Could not fetch leaderboard message with ID {LEADERBOARD_MESSAGE_ID}: {e}")
-            return user_ids
+        except Exception:
+            print("⚠️ Leaderboard message missing, sending a new one.")
+            embed = discord.Embed(
+                title="🏆 Top Clients This Month",
+                description="No data yet.",
+                color=0x2B2D31,
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text="Client Leaderboard")
+            leaderboard_message = await leaderboard_channel.send(embed=embed)
 
         # Build leaderboard embed
         try:
@@ -74,7 +81,6 @@ class TicketPoints(commands.Cog):
             )
             embed.set_footer(text="Client Leaderboard")
             await leaderboard_message.edit(embed=embed)
-            print("✅ Leaderboard updated successfully")
         except Exception as e:
             print("❌ Error updating leaderboard:", e)
 
