@@ -9,32 +9,28 @@ class TicketPoints(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def log_points(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
+    async def log_points(self, channel: discord.TextChannel):
+        """
+        Log points for the ticket users and update leaderboard.
+        Only handles DB operations; does NOT touch interaction responses.
+        """
         colls = await collections()
         tickets_coll = colls["tickets"]
         points_coll = colls["clientPoints"]
 
-        channel = interaction.channel
-        guild = interaction.guild
-
-        if not isinstance(channel, discord.TextChannel):
-            return await interaction.followup.send("❌ This is not a text channel.", ephemeral=True)
-
         if channel.category_id != TICKET_CATEGORY_ID:
-            return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
+            return None  # Not a ticket channel
 
         # Get ticket data
         ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
         if not ticket_data:
-            return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
+            return None
 
         user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
         user_ids = [uid for uid in user_ids if uid]
 
         if not user_ids:
-            return await interaction.followup.send("❌ No users to log points for.", ephemeral=True)
+            return None
 
         # Add points
         for uid in user_ids:
@@ -42,6 +38,7 @@ class TicketPoints(commands.Cog):
 
         # Update leaderboard
         if LEADERBOARD_CHANNEL_ID and LEADERBOARD_MESSAGE_ID:
+            guild = channel.guild
             leaderboard_channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
             if leaderboard_channel:
                 try:
@@ -64,7 +61,4 @@ class TicketPoints(commands.Cog):
                 except Exception as e:
                     print("❌ Error updating leaderboard:", e)
 
-        await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
-
-async def setup(bot):
-    await bot.add_cog(TicketPoints(bot))
+        return user_ids  # Return who got points for followup message
