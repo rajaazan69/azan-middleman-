@@ -1,88 +1,72 @@
-import os
-from datetime import datetime
-import discord
-from discord.ext import commands
-from utils.constants import TICKET_CATEGORY_ID, LEADERBOARD_CHANNEL_ID, LEADERBOARD_MESSAGE_ID
-from utils.db import collections
-
-class TicketPoints(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    async def log_points(self, interaction: discord.Interaction):
+    async def log_points(self, channel: discord.TextChannel):
         """
         Log points for the ticket users and update leaderboard.
-        This version works directly with a button interaction.
+        Only handles DB operations; does NOT touch interaction responses.
         """
+        colls = await collections()
+        tickets_coll = colls["tickets"]
+        points_coll = colls["clientPoints"]
+
+        if channel.category_id != TICKET_CATEGORY_ID:
+            print(f"❌ Channel {channel.id} is not a ticket channel.")
+            return None  # Not a ticket channel
+
+        # Get ticket data
+        ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
+        if not ticket_data:
+            print(f"❌ No ticket data found for channel {channel.id}.")
+            return None
+
+        user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
+        user_ids = [uid for uid in user_ids if uid]
+
+        if not user_ids:
+            print(f"❌ No users found in ticket {channel.id} to log points for.")
+            return None
+
+        # Add points
+        for uid in user_ids:
+            await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
+
+        # Update leaderboard
         try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
-
-            colls = await collections()
-            tickets_coll = colls["tickets"]
-            points_coll = colls["clientPoints"]
-
-            channel = interaction.channel
-            guild = interaction.guild
-
-            if not isinstance(channel, discord.TextChannel):
-                return await interaction.followup.send("❌ This is not a text channel.", ephemeral=True)
-
-            if channel.category_id != TICKET_CATEGORY_ID:
-                return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
-
-            # Fetch ticket data
-            ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
-            if not ticket_data:
-                return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
-
-            user_ids = [ticket_data.get("user1"), ticket_data.get("user2")]
-            user_ids = [uid for uid in user_ids if uid]
-            if not user_ids:
-                return await interaction.followup.send("❌ No users to log points for.", ephemeral=True)
-
-            # Add points in DB
-            for uid in user_ids:
-                await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
-
-            # Update leaderboard
-            if LEADERBOARD_CHANNEL_ID and LEADERBOARD_MESSAGE_ID:
-                leaderboard_channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
-                if leaderboard_channel:
-                    try:
-                        leaderboard_message = await leaderboard_channel.fetch_message(LEADERBOARD_MESSAGE_ID)
-                        top_cursor = points_coll.find().sort("points", -1).limit(10)
-                        top_users = await top_cursor.to_list(length=10)
-                        leaderboard_text = "\n".join(
-                            f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
-                            for i, user in enumerate(top_users)
-                        ) or "No data yet."
-
-                        embed = discord.Embed(
-                            title="🏆 Top Clients This Month",
-                            description=leaderboard_text,
-                            color=0x2B2D31,
-                            timestamp=datetime.utcnow()
-                        )
-                        embed.set_footer(text="Client Leaderboard")
-                        await leaderboard_message.edit(embed=embed)
-                    except Exception as e:
-                        print("❌ Error updating leaderboard:", e)
-
-            # Success message
-            mentions = ", ".join(f"<@{uid}>" for uid in user_ids)
-            await interaction.followup.send(f"✅ Logged 1 point for {mentions}.", ephemeral=True)
-
+            lb_channel_id = int(os.getenv("LEADERBOARD_CHANNEL_ID"))
+            lb_message_id = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
         except Exception as e:
-            print("❌ Error logging points:", e)
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Something went wrong while logging points: {e}", ephemeral=True)
+            print(f"❌ Invalid LEADERBOARD_CHANNEL_ID or LEADERBOARD_MESSAGE_ID in .env: {e}")
+            return user_ids
 
+        guild = channel.guild
+        leaderboard_channel = guild.get_channel(lb_channel_id)
+        if not leaderboard_channel:
+            print(f"❌ Could not find leaderboard channel with ID {lb_channel_id}")
+            return user_ids
 
-# -------------------------
-# Cog setup
-# -------------------------
-async def setup(bot):
-    await bot.add_cog(TicketPoints(bot))
+        try:
+            leaderboard_message = await leaderboard_channel.fetch_message(lb_message_id)
+        except Exception as e:
+            print(f"❌ Could not fetch leaderboard message with ID {lb_message_id}: {e}")
+            return user_ids
+
+        # Build leaderboard embed
+        try:
+            top_cursor = points_coll.find().sort("points", -1).limit(10)
+            top_users = await top_cursor.to_list(length=10)
+
+            leaderboard_text = "\n".join(
+                f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                for i, user in enumerate(top_users)
+            ) or "No data yet."
+
+            embed = discord.Embed(
+                title="🏆 Top Clients This Month",
+                description=leaderboard_text,
+                color=0x2B2D31,
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text="Client Leaderboard")
+            await leaderboard_message.edit(embed=embed)
+        except Exception as e:
+            print("❌ Error updating leaderboard:", e)
+
+        return user_ids  # Return who got points for followup messages
