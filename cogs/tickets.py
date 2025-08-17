@@ -145,9 +145,9 @@ class ClosePanel(discord.ui.View):
             guild = interaction.guild
 
             # -----------------------
-            # Check ticket category
-            # -----------------------
-            if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
+# Check ticket category
+# -----------------------
+if not isinstance(channel, discord.TextChannel) or channel.category_id != TICKET_CATEGORY_ID:
     msg = await interaction.followup.send(
         "❌ This button can only be used inside ticket channels.", ephemeral=True
     )
