@@ -1,100 +1,100 @@
+
+import re
 import discord
+from datetime import datetime
 from discord.ext import commands
-from discord.ui import View, Button
-from io import BytesIO
-import aiohttp
-from PIL import Image, ImageDraw, ImageFont
-from utils.constants import EMBED_COLOR, MIDDLEMAN_ROLE_ID, OWNER_ID
+from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID
 from utils.db import collections
+from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID, LB_CHANNEL_ID, LB_MESSAGE_ID
 
-# ------------------------- Delete Button -------------------------
-class DeleteTicketView(View):
-    def __init__(self, owner_id: int):
+# -------------------------
+# Ticket request panel view
+# -------------------------
+class TicketPanelView(discord.ui.View):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.owner_id = owner_id
 
-    @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket")
-    async def delete_button(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
-            await interaction.channel.delete()
-        else:
-            await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
+    @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="open_ticket")
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        class TicketModal(discord.ui.Modal, title="Middleman Request"):
+            q1 = discord.ui.TextInput(label="What's the trade?", required=True, max_length=200)
+            q2 = discord.ui.TextInput(label="What's your side?", style=discord.TextStyle.long, required=True, max_length=500)
+            q3 = discord.ui.TextInput(label="What's their side?", style=discord.TextStyle.long, required=True, max_length=500)
+            q4 = discord.ui.TextInput(label="Their Discord ID?", required=True, max_length=20)
 
-# ------------------------- Trade Image Generator -------------------------
-async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade_desc):
-    width, height = 800, 400
-    bg_color = (18, 18, 18)
-    img = Image.new("RGBA", (width, height), bg_color)
-    draw = ImageDraw.Draw(img)
+            async def on_submit(self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.defer(ephemeral=True, thinking=False)
+                try:
+                    colls = await collections()
 
-    # Fonts (provide path to .ttf files)
-    title_font = ImageFont.truetype("arialbd.ttf", 40)
-    user_font = ImageFont.truetype("arialbd.ttf", 30)
-    side_font = ImageFont.truetype("arial.ttf", 28)
-    desc_font = ImageFont.truetype("arial.ttf", 24)
+                    # Check for existing ticket
+                    cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
+                    if cat:
+                        for ch in cat.channels:
+                            ow = ch.overwrites_for(modal_interaction.user)
+                            if ow.view_channel:
+                                await modal_interaction.followup.send(
+                                    f"❌ You already have an open ticket: {ch.mention}", ephemeral=True
+                                )
+                                return
 
-    # Draw Title
-    draw.text((width//2, 30), "• TRADE •", font=title_font, fill=(255, 165, 0), anchor="mm")
+                    q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
+                    target_member = None
+                    if re.fullmatch(r"\d{17,19}", q4v):
+                        target_member = modal_interaction.guild.get_member(int(q4v))
 
-    # Fetch avatars
-    async with aiohttp.ClientSession() as session:
-        async with session.get(user1.display_avatar.url) as r:
-            user1_bytes = BytesIO(await r.read())
-        user2_url = user2.display_avatar.url if user2 else "https://cdn.discordapp.com/embed/avatars/1.png"
-        async with session.get(user2_url) as r:
-            user2_bytes = BytesIO(await r.read())
+                    overwrites = {
+                        modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                    }
+                    owner = modal_interaction.guild.get_member(OWNER_ID)
+                    if owner:
+                        overwrites[owner] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    middle_role = modal_interaction.guild.get_role(MIDDLEMAN_ROLE_ID)
+                    if middle_role:
+                        overwrites[middle_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    if target_member:
+                        overwrites[target_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
-    avatar_size = 100
-    avatar1 = Image.open(user1_bytes).convert("RGBA").resize((avatar_size, avatar_size))
-    avatar2 = Image.open(user2_bytes).convert("RGBA").resize((avatar_size, avatar_size))
+                    ticket = await modal_interaction.guild.create_text_channel(
+                        name=f"ticket-{modal_interaction.user.name}",
+                        category=cat,
+                        overwrites=overwrites
+                    )
 
-    # Paste avatars
-    img.paste(avatar1, (150, 100), avatar1)
-    img.paste(avatar2, (width - 250, 100), avatar2)
+                    await colls["tickets"].insert_one({
+                        "channelId": str(ticket.id),
+                        "user1": str(modal_interaction.user.id),
+                        "user2": str(target_member.id) if target_member else None
+                    })
 
-    # Draw usernames + ticket counts
-    draw.text((150 + avatar_size + 20, 110), f"{user1.name} [{count1}]", font=user_font, fill=(255, 255, 255))
-    if user2:
-        draw.text((width - 250 + avatar_size + 20, 110), f"{user2.name} [{count2}]", font=user_font, fill=(255, 255, 255))
-    else:
-        draw.text((width - 250 + avatar_size + 20, 110), "Unknown User [0]", font=user_font, fill=(200, 200, 200))
+                    # Info embeds
+                    info = discord.Embed(
+                        description="Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all rules and **vouch when the trade is over**.",
+                        color=EMBED_COLOR
+                    )
+                    user2_val = f"<@{target_member.id}>" if target_member else "`Unknown User`"
+                    details = discord.Embed(title="Middleman Request", color=0xFFFFFF)
+                    details.set_thumbnail(url=modal_interaction.user.display_avatar.url)
+                    details.add_field(name="**User 1**", value=f"<@{modal_interaction.user.id}>", inline=True)
+                    details.add_field(name="**User 2**", value=user2_val, inline=True)
+                    details.add_field(name="\u200b", value="\u200b", inline=False)
+                    details.add_field(name="**Trade Details**", value=f"> {q1v}", inline=False)
+                    details.add_field(name="**User 1 is giving**", value=f"> {q2v}", inline=False)
+                    details.add_field(name="**User 2 is giving**", value=f"> {q3v}", inline=False)
 
-    # Draw sides
-    draw.text((150 + avatar_size + 20, 150), f"Side: {side1}", font=side_font, fill=(255, 255, 255))
-    draw.text((width - 250 + avatar_size + 20, 150), f"Side: {side2}", font=side_font, fill=(255, 255, 255))
+                    await ticket.send(
+                        content=f"<@{modal_interaction.user.id}> made a ticket with {user2_val}.\nPlease wait until <@{OWNER_ID}> assists you.",
+                        embeds=[info, details]
+                    )
 
-    # Draw trade description at bottom
-    draw.text((width//2, 300), trade_desc, font=desc_font, fill=(255, 255, 255), anchor="mm")
+                    await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
 
-    # Save to BytesIO
-    final_bytes = BytesIO()
-    img.save(final_bytes, format="PNG")
-    final_bytes.seek(0)
-    return final_bytes
+                except Exception as e:
+                    await modal_interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
-# ------------------------- Send Trade Embed -------------------------
-async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    colls = await collections()
-    # Fetch ticket counts
-    count1 = await colls["tickets"].count_documents({"user_id": str(user1.id)})
-    count2 = await colls["tickets"].count_documents({"user_id": str(user2.id)}) if user2 else 0
+        await interaction.response.send_modal(TicketModal())
 
-    # Generate image
-    image_bytes = await generate_trade_image(user1, user2, side1, side2, count1, count2, trade_desc)
-    file = discord.File(fp=image_bytes, filename="trade.png")
-
-    # Create embed
-    embed = discord.Embed(title="• TRADE •", color=0x000000)
-    embed.set_image(url="attachment://trade.png")
-    embed.set_footer(text="Please wait for Middleman assistance")
-
-    # Send with Delete button and invisible ping line
-    await ticket_channel.send(
-        content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embed=embed,
-        file=file,
-        view=DeleteTicketView(owner_id=user1.id)
-    )
 # -------------------------
 # Close ticket view
 # -------------------------
