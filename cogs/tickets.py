@@ -1,31 +1,16 @@
+import re
 import discord
 from discord.ext import commands
-from discord.ui import View, Button
+from discord.ui import View, Button, Modal, TextInput
 from io import BytesIO
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
-from utils.constants import EMBED_COLOR, MIDDLEMAN_ROLE_ID, OWNER_ID, TICKET_CATEGORY_ID, LB_CHANNEL_ID, LB_MESSAGE_ID
+from utils.constants import (
+    EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID,
+    LB_CHANNEL_ID, LB_MESSAGE_ID
+)
 from utils.db import collections
-
-# ------------------------- Ticket Panel View -------------------------
-class TicketPanelView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="open_ticket")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        class TicketModal(discord.ui.Modal, title="Middleman Request"):
-            q1 = discord.ui.TextInput(label="What's the trade?", required=True, max_length=200)
-            q2 = discord.ui.TextInput(label="What's your side?", style=discord.TextStyle.long, required=True, max_length=500)
-            q3 = discord.ui.TextInput(label="What's their side?", style=discord.TextStyle.long, required=True, max_length=500)
-            q4 = discord.ui.TextInput(label="Their Discord ID?", required=False, max_length=20)
-
-            async def on_submit(self, modal_interaction: discord.Interaction):
-                await modal_interaction.response.send_message("✅ Ticket submitted!", ephemeral=True)
-                # Your existing ticket creation logic goes here (generate trade embed, Pillow image, etc.)
-
-        await interaction.response.send_modal(TicketModal())
 
 # ------------------------- Delete Button -------------------------
 class DeleteTicketView(View):
@@ -47,7 +32,7 @@ async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade
     img = Image.new("RGBA", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
 
-    # Fonts (make sure the .ttf files exist)
+    # Fonts (provide path to .ttf files)
     title_font = ImageFont.truetype("arialbd.ttf", 40)
     user_font = ImageFont.truetype("arialbd.ttf", 30)
     side_font = ImageFont.truetype("arial.ttf", 28)
@@ -86,6 +71,7 @@ async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade
     # Draw trade description at bottom
     draw.text((width//2, 300), trade_desc, font=desc_font, fill=(255, 255, 255), anchor="mm")
 
+    # Save to BytesIO
     final_bytes = BytesIO()
     img.save(final_bytes, format="PNG")
     final_bytes.seek(0)
@@ -94,16 +80,20 @@ async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     colls = await collections()
+    # Fetch ticket counts
     count1 = await colls["tickets"].count_documents({"user_id": str(user1.id)})
     count2 = await colls["tickets"].count_documents({"user_id": str(user2.id)}) if user2 else 0
 
+    # Generate image
     image_bytes = await generate_trade_image(user1, user2, side1, side2, count1, count2, trade_desc)
     file = discord.File(fp=image_bytes, filename="trade.png")
 
+    # Create embed
     embed = discord.Embed(title="• TRADE •", color=0x000000)
     embed.set_image(url="attachment://trade.png")
     embed.set_footer(text="Please wait for Middleman assistance")
 
+    # Send with Delete button and invisible ping line
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embed=embed,
@@ -111,8 +101,8 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
         view=DeleteTicketView(owner_id=user1.id)
     )
 
-# ------------------------- Close ticket view -------------------------
-class ClosePanel(discord.ui.View):
+# ------------------------- Close Panel -------------------------
+class ClosePanel(View):
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -121,12 +111,17 @@ class ClosePanel(discord.ui.View):
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True, thinking=True)
+
             cog = interaction.client.get_cog("Transcripts")
             if not cog:
                 return await interaction.followup.send("❌ Transcript system not loaded.", ephemeral=True)
+
             await cog.generate_transcript(interaction, interaction.channel)
         except Exception as e:
-            print("Transcript Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
@@ -142,41 +137,130 @@ class ClosePanel(discord.ui.View):
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
+
             channel = interaction.channel
             guild = interaction.guild
             if not isinstance(channel, discord.TextChannel) or getattr(channel, "category_id", None) != TICKET_CATEGORY_ID:
                 return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
+
             colls = await collections()
             tickets_coll = colls["tickets"]
             points_coll = colls["clientPoints"]
+
             ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
             if not ticket_data:
                 return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
+
             user_ids = [uid for uid in [ticket_data.get("user1"), ticket_data.get("user2")] if uid]
             if not user_ids:
                 return await interaction.followup.send("❌ No users to log points for.", ephemeral=True)
+
             for uid in user_ids:
                 await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
+
+            # Leaderboard
             lb_channel = guild.get_channel(LB_CHANNEL_ID)
             if not lb_channel:
                 return await interaction.followup.send("❌ Leaderboard channel not found.", ephemeral=True)
+
             lb_message = None
             try:
                 lb_message = await lb_channel.fetch_message(LB_MESSAGE_ID)
             except Exception:
-                embed = discord.Embed(title="🏆 Top Clients This Month", description="No data yet.", color=0x2B2D31, timestamp=datetime.utcnow())
+                embed = discord.Embed(
+                    title="🏆 Top Clients This Month",
+                    description="No data yet.",
+                    color=0x2B2D31,
+                    timestamp=datetime.utcnow()
+                )
                 embed.set_footer(text="Client Leaderboard")
                 lb_message = await lb_channel.send(embed=embed)
+
             top_users = await points_coll.find().sort("points", -1).limit(10).to_list(length=10)
             leaderboard_text = "\n".join(
-                f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}" for i, user in enumerate(top_users)
+                f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                for i, user in enumerate(top_users)
             ) or "No data yet."
-            embed = discord.Embed(title="🏆 Top Clients This Month", description=leaderboard_text, color=0x2B2D31, timestamp=datetime.utcnow())
+
+            embed = discord.Embed(
+                title="🏆 Top Clients This Month",
+                description=leaderboard_text,
+                color=0x2B2D31,
+                timestamp=datetime.utcnow()
+            )
             embed.set_footer(text="Client Leaderboard")
             await lb_message.edit(embed=embed)
+
             await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
         except Exception as e:
             print("Log Points Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Something went wrong: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Something went wrong: {e}", ephemeral=True)
+
+# ------------------------- Ticket Panel & Modal -------------------------
+class TicketPanelView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="open_ticket")
+    async def open_ticket(self, interaction: discord.Interaction, button: Button):
+        class TicketModal(Modal, title="Middleman Request"):
+            q1 = TextInput(label="What's the trade?", required=True, max_length=200)
+            q2 = TextInput(label="What's your side?", style=discord.TextStyle.long, required=True, max_length=500)
+            q3 = TextInput(label="What's their side?", style=discord.TextStyle.long, required=True, max_length=500)
+            q4 = TextInput(label="Their Discord ID?", required=False, max_length=20)
+
+            async def on_submit(self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.defer(ephemeral=True, thinking=False)
+                try:
+                    colls = await collections()
+                    cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
+                    if cat:
+                        for ch in cat.channels:
+                            ow = ch.overwrites_for(modal_interaction.user)
+                            if ow.view_channel:
+                                return await modal_interaction.followup.send(f"❌ You already have an open ticket: {ch.mention}", ephemeral=True)
+
+                    q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
+                    target_member = None
+                    if q4v and re.fullmatch(r"\d{17,19}", q4v):
+                        target_member = modal_interaction.guild.get_member(int(q4v))
+
+                    overwrites = {
+                        modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                    }
+                    owner = modal_interaction.guild.get_member(OWNER_ID)
+                    if owner:
+                        overwrites[owner] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    middle_role = modal_interaction.guild.get_role(MIDDLEMAN_ROLE_ID)
+                    if middle_role:
+                        overwrites[middle_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+                    if target_member:
+                        overwrites[target_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+                    ticket = await modal_interaction.guild.create_text_channel(
+                        name=f"ticket-{modal_interaction.user.name}",
+                        category=cat,
+                        overwrites=overwrites
+                    )
+
+                    await colls["tickets"].insert_one({
+                        "channelId": str(ticket.id),
+                        "user1": str(modal_interaction.user.id),
+                        "user2": str(target_member.id) if target_member else None
+                    })
+
+                    # Send trade embed
+                    await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
+                    await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
+
+                except Exception as e:
+                    await modal_interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+        await interaction.response.send_modal(TicketModal())
 
 # ------------------------- Main Cog -------------------------
 class Tickets(commands.Cog):
@@ -233,6 +317,8 @@ class Tickets(commands.Cog):
         embed.set_footer(text=f"Closed by {ctx.author}")
         await ctx.send(embed=embed, view=ClosePanel())
 
-# ------------------------- Cog setup -------------------------
+# -------------------------
+# Cog setup
+# -------------------------
 async def setup(bot):
     await bot.add_cog(Tickets(bot))
