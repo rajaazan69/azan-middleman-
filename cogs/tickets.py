@@ -7,6 +7,22 @@ from utils.db import collections
 from utils.constants import EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID, LB_CHANNEL_ID, LB_MESSAGE_ID
 
 # -------------------------
+# Delete button view
+# -------------------------
+class TradeView(discord.ui.View):
+    def __init__(self, owner_id: int, middleman_role_id: int):
+        super().__init__(timeout=None)
+        self.owner_id = owner_id
+        self.middleman_role_id = middleman_role_id
+
+    @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket")
+    async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (interaction.user.id == self.owner_id) or (self.middleman_role_id in [r.id for r in interaction.user.roles]):
+            await interaction.channel.delete()
+        else:
+            await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
+
+# -------------------------
 # Ticket request panel view
 # -------------------------
 class TicketPanelView(discord.ui.View):
@@ -67,24 +83,44 @@ class TicketPanelView(discord.ui.View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
-                    # Info embeds
-                    info = discord.Embed(
-                        description="Please wait for our **Middleman Team** to assist you.\nMake sure to abide by all rules and **vouch when the trade is over**.",
-                        color=EMBED_COLOR
+                    # Fetch ticket counts
+                    count1 = await colls["tickets"].count_documents({"user1": str(modal_interaction.user.id)})
+                    count2 = await colls["tickets"].count_documents({"user1": str(target_member.id)}) if target_member else 0
+
+                    # New trade embed
+                    trade_embed = discord.Embed(
+                        title="• TRADE •",
+                        description="Please wait for our **Middleman Team** to assist you.\n"
+                                    "Make sure to abide by all rules and **vouch when the trade is over**.",
+                        color=0x000000
                     )
+
                     user2_val = f"<@{target_member.id}>" if target_member else "`Unknown User`"
-                    details = discord.Embed(title="Middleman Request", color=0xFFFFFF)
-                    details.set_thumbnail(url=modal_interaction.user.display_avatar.url)
-                    details.add_field(name="**User 1**", value=f"<@{modal_interaction.user.id}>", inline=True)
-                    details.add_field(name="**User 2**", value=user2_val, inline=True)
-                    details.add_field(name="\u200b", value="\u200b", inline=False)
-                    details.add_field(name="**Trade Details**", value=f"> {q1v}", inline=False)
-                    details.add_field(name="**User 1 is giving**", value=f"> {q2v}", inline=False)
-                    details.add_field(name="**User 2 is giving**", value=f"> {q3v}", inline=False)
+
+                    trade_embed.add_field(
+                        name=f"{modal_interaction.user.mention} [{count1}]",
+                        value=f"**Side:** {q2v}\n[​]({modal_interaction.user.display_avatar.url})",
+                        inline=True
+                    )
+
+                    trade_embed.add_field(
+                        name=f"{user2_val} [{count2}]",
+                        value=f"**Side:** {q3v}\n[​]({target_member.display_avatar.url if target_member else ''})",
+                        inline=True
+                    )
+
+                    trade_embed.add_field(
+                        name="\u200b",
+                        value=f"────────────────────\n<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
+                        inline=False
+                    )
+
+                    view = TradeView(OWNER_ID, MIDDLEMAN_ROLE_ID)
 
                     await ticket.send(
-                        content=f"<@{modal_interaction.user.id}> made a ticket with {user2_val}.\nPlease wait until <@{OWNER_ID}> assists you.",
-                        embeds=[info, details]
+                        content=f"<@{modal_interaction.user.id}> made a ticket with {user2_val}.",
+                        embed=trade_embed,
+                        view=view
                     )
 
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
@@ -93,7 +129,6 @@ class TicketPanelView(discord.ui.View):
                     await modal_interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
         await interaction.response.send_modal(TicketModal())
-
 # -------------------------
 # Close ticket view
 # -------------------------
