@@ -1,4 +1,6 @@
 import re
+import io
+import math
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
@@ -10,10 +12,10 @@ from utils.constants import (
     LB_CHANNEL_ID, LB_MESSAGE_ID
 )
 from utils.db import collections
-from pathlib import Path
-from playwright.async_api import async_playwright
-import asyncio
-import base64
+from PIL import Image, ImageDraw, ImageFont
+
+# ====== CONFIG: your one-time Cloudinary base template ======
+CLOUDINARY_TEMPLATE_URL = "https://res.cloudinary.com/ddvgelgbg/image/upload/v1755638544/E9AADBCB-0F63-4CF6-A025-2EAF96945B9C_lltnoa.png"
 
 # ------------------------- Delete Button -------------------------
 class DeleteTicketView(View):
@@ -28,83 +30,166 @@ class DeleteTicketView(View):
         else:
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
-# ------------------------- Trade Image Generator (HTML + Playwright) -------------------------
+# ------------------------- Helper: fonts -------------------------
+def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """
+    Try common fonts; fall back to PIL default so we never error.
+    """
+    for name in ["DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "Arial.ttf"]:
+        try:
+            return ImageFont.truetype(name, size=size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+# ------------------------- Helper: text utils -------------------------
+def _truncate_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_w: int) -> str:
+    """
+    Keep as much text as fits; add ellipsis if needed.
+    """
+    if draw.textlength(text, font=font) <= max_w:
+        return text
+    ell = "…"
+    if draw.textlength(ell, font=font) > max_w:
+        return ""
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        t = text[:mid] + ell
+        if draw.textlength(t, font=font) <= max_w:
+            lo = mid + 1
+        else:
+            hi = mid
+    return text[:max(0, lo - 1)] + ell
+
+# ------------------------- Helper: fetch & prepare images -------------------------
+async def _fetch_bytes(url: str) -> bytes:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            resp.raise_for_status()
+            return await resp.read()
+
+def _square_fit(im: Image.Image, size: int) -> Image.Image:
+    """
+    Center-crop to square, then resize to (size, size).
+    """
+    w, h = im.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    im = im.crop((left, top, left + side, top + side))
+    return im.resize((size, size), Image.LANCZOS)
+
+# ------------------------- Trade Image Generator (Template + PIL) -------------------------
 async def generate_trade_image(user1, user2, side1, side2, count1, count2):
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch()
-        page = await browser.new_page()
+    """
+    Uses your Cloudinary template as background; overlays:
+      [count] @user1 side:
+      their side: <value>
+      [count] @user2 side:
+      their side: <value>     [avatar2 aligned to this line]
+    Avatars are SQUARE, hard-coded positions to match template.
+    """
+    # 1) Load base template
+    template_bytes = await _fetch_bytes(CLOUDINARY_TEMPLATE_URL)
+    base = Image.open(BytesIO(template_bytes)).convert("RGBA")
+    W, H = base.size
 
-        # Fetch avatars as base64
-        async with aiohttp.ClientSession() as session:
-            async with session.get(user1.display_avatar.url) as resp:
-                avatar1_bytes = await resp.read()
-            avatar1_b64 = base64.b64encode(avatar1_bytes).decode()
+    # 2) Compute hard-coded layout (relative to template size)
+    # Margins & avatar sizing
+    margin_x = int(W * 0.055)           # left padding for text
+    right_margin = int(W * 0.055)       # right padding
+    avatar_size = int(H * 0.20)         # square avatar size
+    gap_y = int(H * 0.035)              # vertical gap between blocks
 
-            if user2:
-                async with session.get(user2.display_avatar.url) as resp:
-                    avatar2_bytes = await resp.read()
-                avatar2_b64 = base64.b64encode(avatar2_bytes).decode()
-            else:
-                avatar2_b64 = None
+    # Title is already baked into template; we position beneath the first divider area.
+    # Choose y-anchors for two blocks that match your screenshot proportions:
+    block1_top = int(H * 0.27)          # top of user1 name line
+    block2_top = int(H * 0.59)          # top of user2 name line
 
-        # HTML content for trade card
-        html = f"""
-        <html>
-        <head>
-        <style>
-            body {{ margin:0; padding:0; background:black; font-family: Arial, sans-serif; }}
-            .card {{ width:900px; height:400px; display:flex; flex-direction:column; justify-content:space-between; padding:20px; color:white; }}
-            .header {{ text-align:center; font-size:42px; text-decoration:underline; margin-bottom:20px; }}
-            .trade-row {{ display:flex; justify-content:space-between; align-items:flex-start; }}
-            .user-block {{ display:flex; align-items:flex-start; gap:15px; }}
-            .avatar {{ width:100px; height:100px; object-fit:cover; }}
-            .side {{ color:#CCCCCC; font-size:28px; }}
-            .count {{ color:#AAAAAA; font-size:24px; }}
-        </style>
-        </head>
-        <body>
-            <div class="card">
-                <div class="header">• Trade •</div>
-                <div class="trade-row">
-                    <div class="user-block">
-                        <div>
-                            <div class="count">[{count1}]</div>
-                            <div>{user1.display_name}</div>
-                            <div class="side">{side1}</div>
-                        </div>
-                        <img class="avatar" src="data:image/png;base64,{avatar1_b64}" />
-                    </div>
+    # Text fonts (scale with canvas height)
+    name_size = max(22, int(H * 0.055))        # for "[count] @user side:"
+    side_size = max(20, int(H * 0.045))        # for "their side: ..."
+    font_name = _load_font(name_size)
+    font_side = _load_font(side_size)
 
-                    <div class="user-block">
-                        <div>
-                            <div class="count">[{count2}]</div>
-                            <div>{user2.display_name if user2 else 'Unknown'}</div>
-                            <div class="side">{side2}</div>
-                        </div>
-                        <img class="avatar" src="data:image/png;base64,{avatar2_b64 if avatar2_b64 else ''}" />
-                    </div>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+    # Avatar X positions (right aligned)
+    avatar_x = W - right_margin - avatar_size
 
-        await page.set_content(html)
-        screenshot_bytes = await page.screenshot(type="png")
-        await browser.close()
+    # 3) Load avatars (square)
+    # user1 avatar aligned with the *name* line
+    a1_bytes = await _fetch_bytes(user1.display_avatar.with_static_format("png").url)
+    a1 = Image.open(BytesIO(a1_bytes)).convert("RGBA")
+    a1 = _square_fit(a1, avatar_size)
 
-        return BytesIO(screenshot_bytes)
+    # user2 may be None
+    a2 = None
+    if user2:
+        a2_bytes = await _fetch_bytes(user2.display_avatar.with_static_format("png").url)
+        a2 = Image.open(BytesIO(a2_bytes)).convert("RGBA")
+        a2 = _square_fit(a2, avatar_size)
+
+    # 4) Draw text
+    draw = ImageDraw.Draw(base)
+
+    # Safe area width for text (so it doesn't collide with avatar)
+    max_text_w = avatar_x - margin_x - int(W * 0.02)
+
+    # -------- Block 1 (User1) --------
+    line1_text = f"[{count1}] @{user1.display_name} side:"
+    line1_text = _truncate_to_width(draw, line1_text, font_name, max_text_w)
+    draw.text((margin_x, block1_top), line1_text, fill="white", font=font_name)
+
+    side1_text = f"their side: {side1}"
+    side1_text = _truncate_to_width(draw, side1_text, font_side, max_text_w)
+    side1_y = block1_top + int(name_size * 1.25)
+    draw.text((margin_x, side1_y), side1_text, fill=(220, 220, 220, 255), font=font_side)
+
+    # Avatar1 aligned to name line
+    base.alpha_composite(a1, (avatar_x, block1_top))
+
+    # -------- Block 2 (User2) --------
+    # Name line
+    if user2:
+        line2_text = f"[{count2}] @{user2.display_name} side:"
+    else:
+        line2_text = f"[{count2}] @Unknown side:"
+    line2_text = _truncate_to_width(draw, line2_text, font_name, max_text_w)
+    draw.text((margin_x, block2_top), line2_text, fill="white", font=font_name)
+
+    # Side line (avatar aligned to this side line for user2)
+    side2_text = f"their side: {side2}"
+    side2_text = _truncate_to_width(draw, side2_text, font_side, max_text_w)
+    side2_y = block2_top + int(name_size * 1.25)
+    draw.text((margin_x, side2_y), side2_text, fill=(220, 220, 220, 255), font=font_side)
+
+    if a2:
+        # Align avatar to the SIDE line (as you requested)
+        base.alpha_composite(a2, (avatar_x, side2_y))
+
+    # 5) Export to bytes
+    out = BytesIO()
+    base.save(out, format="PNG")
+    out.seek(0)
+    return out
 
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     colls = await collections()
-    count1 = await colls["tickets"].count_documents({"user_id": str(user1.id)})
-    count2 = await colls["tickets"].count_documents({"user_id": str(user2.id)}) if user2 else 0
+    tickets_coll = colls["tickets"]
+
+    # Count appearances where user is either user1 or user2 in your tickets collection
+    async def _count_user(uid: int) -> int:
+        return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+
+    count1 = await _count_user(user1.id)
+    count2 = await _count_user(user2.id) if user2 else 0
 
     image_bytes = await generate_trade_image(user1, user2, side1, side2, count1, count2)
     file = discord.File(fp=image_bytes, filename="trade.png")
 
-    embed = discord.Embed(color=0x000000)
+    # Match Discord dark embed look
+    embed = discord.Embed(color=0x2F3136)
     embed.set_image(url="attachment://trade.png")
     embed.set_footer(text=f"Trade: {trade_desc}")
 
