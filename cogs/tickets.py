@@ -27,55 +27,51 @@ class DeleteTicketView(View):
 
 # ------------------------- Trade Image Generator -------------------------
 async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade_desc):
-    width, height = 800, 400
-    bg_color = (18, 18, 18)
-    img = Image.new("RGBA", (width, height), bg_color)
-    draw = ImageDraw.Draw(img)
+    width, height = 600, 250
+    card = Image.new("RGB", (width, height), (24, 26, 27))  # dark bg
+    draw = ImageDraw.Draw(card)
 
-    # Fonts (provide path to .ttf files)
-    title_font = ImageFont.truetype("arialbd.ttf", 40)
-    user_font = ImageFont.truetype("arialbd.ttf", 30)
-    side_font = ImageFont.truetype("arial.ttf", 28)
-    desc_font = ImageFont.truetype("arial.ttf", 24)
+    # Fonts (replace with your own .ttf if needed)
+    font_big = ImageFont.truetype("arialbd.ttf", 32)
+    font_small = ImageFont.truetype("arial.ttf", 22)
 
-    # Draw Title
-    draw.text((width//2, 30), "• TRADE •", font=title_font, fill=(255, 165, 0), anchor="mm")
+    # Title
+    draw.text((width // 2, 20), "• TRADE •", font=font_big, fill=(255, 165, 0), anchor="mm")
+
+    # Divider line
+    draw.line([(20, 55), (580, 55)], fill=(70, 70, 70), width=2)
 
     # Fetch avatars
     async with aiohttp.ClientSession() as session:
-        async with session.get(user1.display_avatar.url) as r:
-            user1_bytes = BytesIO(await r.read())
-        user2_url = user2.display_avatar.url if user2 else "https://cdn.discordapp.com/embed/avatars/1.png"
-        async with session.get(user2_url) as r:
-            user2_bytes = BytesIO(await r.read())
+        async with session.get(user1.display_avatar.url) as resp:
+            avatar1 = Image.open(BytesIO(await resp.read())).convert("RGB").resize((64, 64))
+        if user2:
+            async with session.get(user2.display_avatar.url) as resp:
+                avatar2 = Image.open(BytesIO(await resp.read())).convert("RGB").resize((64, 64))
+        else:
+            avatar2 = Image.new("RGB", (64, 64), (100, 100, 100))
 
-    avatar_size = 100
-    avatar1 = Image.open(user1_bytes).convert("RGBA").resize((avatar_size, avatar_size))
-    avatar2 = Image.open(user2_bytes).convert("RGBA").resize((avatar_size, avatar_size))
+    # User1 side
+    draw.text((30, 70), f"[{count1}] {user1.display_name}'s side:", font=font_small, fill=(200, 200, 200))
+    draw.text((30, 100), side1, font=font_small, fill=(255, 255, 255))
+    card.paste(avatar1, (500, 60))
 
-    # Paste avatars
-    img.paste(avatar1, (150, 100), avatar1)
-    img.paste(avatar2, (width - 250, 100), avatar2)
+    # Divider
+    draw.line([(20, 140), (580, 140)], fill=(70, 70, 70), width=2)
 
-    # Draw usernames + ticket counts
-    draw.text((150 + avatar_size + 20, 110), f"{user1.name} [{count1}]", font=user_font, fill=(255, 255, 255))
+    # User2 side
     if user2:
-        draw.text((width - 250 + avatar_size + 20, 110), f"{user2.name} [{count2}]", font=user_font, fill=(255, 255, 255))
+        draw.text((30, 160), f"[{count2}] {user2.display_name}'s side:", font=font_small, fill=(200, 200, 200))
     else:
-        draw.text((width - 250 + avatar_size + 20, 110), "Unknown User [0]", font=user_font, fill=(200, 200, 200))
+        draw.text((30, 160), f"[0] Unknown's side:", font=font_small, fill=(200, 200, 200))
+    draw.text((30, 190), side2, font=font_small, fill=(255, 255, 255))
+    card.paste(avatar2, (500, 160))
 
-    # Draw sides
-    draw.text((150 + avatar_size + 20, 150), f"Side: {side1}", font=side_font, fill=(255, 255, 255))
-    draw.text((width - 250 + avatar_size + 20, 150), f"Side: {side2}", font=side_font, fill=(255, 255, 255))
-
-    # Draw trade description at bottom
-    draw.text((width//2, 300), trade_desc, font=desc_font, fill=(255, 255, 255), anchor="mm")
-
-    # Save to BytesIO
-    final_bytes = BytesIO()
-    img.save(final_bytes, format="PNG")
-    final_bytes.seek(0)
-    return final_bytes
+    # Save to buffer
+    buffer = BytesIO()
+    card.save(buffer, "PNG")
+    buffer.seek(0)
+    return buffer
 
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
@@ -89,11 +85,11 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     file = discord.File(fp=image_bytes, filename="trade.png")
 
     # Create embed
-    embed = discord.Embed(title="• TRADE •", color=0x000000)
+    embed = discord.Embed(color=0x2B2D31)
     embed.set_image(url="attachment://trade.png")
     embed.set_footer(text="Please wait for Middleman assistance")
 
-    # Send with Delete button and invisible ping line
+    # Send with Delete button and ping line
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embed=embed,
