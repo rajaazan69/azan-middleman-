@@ -26,7 +26,7 @@ class DeleteTicketView(View):
         else:
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
-# ------------------------- Trade Image Generator -------------------------
+# ------------------------- Trade Image Generator (Fixed) -------------------------
 async def generate_trade_image(user1, user2, side1, side2, count1, count2):
     width, height = 900, 400
     card = Image.new("RGB", (width, height), (0, 0, 0))
@@ -42,7 +42,8 @@ async def generate_trade_image(user1, user2, side1, side2, count1, count2):
 
     # Header: white & underlined
     title_text = "• Trade •"
-    w, h = draw.textsize(title_text, font=font_title)
+    bbox = draw.textbbox((0, 0), title_text, font=font_title)
+    w = bbox[2] - bbox[0]
     draw.text((width//2, 25), title_text, font=font_title, fill=(255, 255, 255), anchor="mm")
     draw.line(((width//2 - w//2, 70), (width//2 + w//2, 70)), fill=(255, 255, 255), width=2)
 
