@@ -4,7 +4,6 @@ from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
 from io import BytesIO
 import aiohttp
-from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 from utils.constants import (
     EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID,
@@ -12,6 +11,9 @@ from utils.constants import (
 )
 from utils.db import collections
 from pathlib import Path
+from playwright.async_api import async_playwright
+import asyncio
+import base64
 
 # ------------------------- Delete Button -------------------------
 class DeleteTicketView(View):
@@ -26,58 +28,72 @@ class DeleteTicketView(View):
         else:
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
-# ------------------------- Trade Image Generator (Fixed) -------------------------
+# ------------------------- Trade Image Generator (HTML + Playwright) -------------------------
 async def generate_trade_image(user1, user2, side1, side2, count1, count2):
-    width, height = 900, 400
-    card = Image.new("RGB", (width, height), (0, 0, 0))
-    draw = ImageDraw.Draw(card)
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch()
+        page = await browser.new_page()
 
-    # Font paths
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    FONT_PATH = BASE_DIR / "ARIAL.TTF"
-    font_title = ImageFont.truetype(str(FONT_PATH), 42)
-    font_user = ImageFont.truetype(str(FONT_PATH), 30)
-    font_side = ImageFont.truetype(str(FONT_PATH), 28)
-    font_count = ImageFont.truetype(str(FONT_PATH), 24)
+        # Fetch avatars as base64
+        async with aiohttp.ClientSession() as session:
+            async with session.get(user1.display_avatar.url) as resp:
+                avatar1_bytes = await resp.read()
+            avatar1_b64 = base64.b64encode(avatar1_bytes).decode()
 
-    # Header: white & underlined
-    title_text = "• Trade •"
-    bbox = draw.textbbox((0, 0), title_text, font=font_title)
-    w = bbox[2] - bbox[0]
-    draw.text((width//2, 25), title_text, font=font_title, fill=(255, 255, 255), anchor="mm")
-    draw.line(((width//2 - w//2, 70), (width//2 + w//2, 70)), fill=(255, 255, 255), width=2)
+            if user2:
+                async with session.get(user2.display_avatar.url) as resp:
+                    avatar2_bytes = await resp.read()
+                avatar2_b64 = base64.b64encode(avatar2_bytes).decode()
+            else:
+                avatar2_b64 = None
 
-    # Fetch avatars
-    async with aiohttp.ClientSession() as session:
-        async with session.get(user1.display_avatar.url) as resp:
-            avatar1 = Image.open(BytesIO(await resp.read())).convert("RGBA").resize((100, 100))
-        if user2:
-            async with session.get(user2.display_avatar.url) as resp:
-                avatar2 = Image.open(BytesIO(await resp.read())).convert("RGBA").resize((100, 100))
-        else:
-            avatar2 = Image.new("RGBA", (100, 100), (60, 60, 60))
+        # HTML content for trade card
+        html = f"""
+        <html>
+        <head>
+        <style>
+            body {{ margin:0; padding:0; background:black; font-family: Arial, sans-serif; }}
+            .card {{ width:900px; height:400px; display:flex; flex-direction:column; justify-content:space-between; padding:20px; color:white; }}
+            .header {{ text-align:center; font-size:42px; text-decoration:underline; margin-bottom:20px; }}
+            .trade-row {{ display:flex; justify-content:space-between; align-items:flex-start; }}
+            .user-block {{ display:flex; align-items:flex-start; gap:15px; }}
+            .avatar {{ width:100px; height:100px; object-fit:cover; }}
+            .side {{ color:#CCCCCC; font-size:28px; }}
+            .count {{ color:#AAAAAA; font-size:24px; }}
+        </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="header">• Trade •</div>
+                <div class="trade-row">
+                    <div class="user-block">
+                        <div>
+                            <div class="count">[{count1}]</div>
+                            <div>{user1.display_name}</div>
+                            <div class="side">{side1}</div>
+                        </div>
+                        <img class="avatar" src="data:image/png;base64,{avatar1_b64}" />
+                    </div>
 
-    # Left side (user1)
-    draw.text((50, 120), f"{user1.display_name}", font=font_user, fill=(255,255,255))
-    draw.text((50, 160), f"Side: {side1}", font=font_side, fill=(200,200,200))
-    draw.text((50, 200), f"[{count1}]", font=font_count, fill=(180,180,180))
-    card.paste(avatar1, (220, 130), avatar1)
+                    <div class="user-block">
+                        <div>
+                            <div class="count">[{count2}]</div>
+                            <div>{user2.display_name if user2 else 'Unknown'}</div>
+                            <div class="side">{side2}</div>
+                        </div>
+                        <img class="avatar" src="data:image/png;base64,{avatar2_b64 if avatar2_b64 else ''}" />
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
 
-    # Right side (user2)
-    if user2:
-        draw.text((width//2 + 80, 120), f"{user2.display_name}", font=font_user, fill=(255,255,255))
-        draw.text((width//2 + 80, 160), f"Side: {side2}", font=font_side, fill=(200,200,200))
-        draw.text((width//2 + 80, 200), f"[{count2}]", font=font_count, fill=(180,180,180))
-    else:
-        draw.text((width//2 + 80, 120), "Unknown", font=font_user, fill=(255,255,255))
-        draw.text((width//2 + 80, 160), f"Side: {side2}", font=font_side, fill=(200,200,200))
-        draw.text((width//2 + 80, 200), "[0]", font=font_count, fill=(180,180,180))
-    card.paste(avatar2, (width - 130, 130), avatar2)
+        await page.set_content(html)
+        screenshot_bytes = await page.screenshot(type="png")
+        await browser.close()
 
-    buffer = BytesIO()
-    card.save(buffer, "PNG")
-    buffer.seek(0)
-    return buffer
+        return BytesIO(screenshot_bytes)
 
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
@@ -92,7 +108,6 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     embed.set_image(url="attachment://trade.png")
     embed.set_footer(text=f"Trade: {trade_desc}")
 
-    # Invisible line pinging owner + middleman outside embed
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embed=embed,
@@ -157,7 +172,6 @@ class ClosePanel(View):
             for uid in user_ids:
                 await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
 
-            # Leaderboard
             lb_channel = guild.get_channel(LB_CHANNEL_ID)
             if not lb_channel:
                 return await interaction.followup.send("❌ Leaderboard channel not found.", ephemeral=True)
@@ -252,7 +266,6 @@ class TicketPanelView(View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
-                    # Send trade embed
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
 
