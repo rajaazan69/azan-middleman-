@@ -11,6 +11,7 @@ from utils.constants import (
     LB_CHANNEL_ID, LB_MESSAGE_ID
 )
 from utils.db import collections
+from pathlib import Path
 
 # ------------------------- Delete Button -------------------------
 class DeleteTicketView(View):
