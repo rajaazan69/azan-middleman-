@@ -31,9 +31,13 @@ async def generate_trade_image(user1, user2, side1, side2, count1, count2, trade
     card = Image.new("RGB", (width, height), (24, 26, 27))  # dark bg
     draw = ImageDraw.Draw(card)
 
-    # Fonts (replace with your own .ttf if needed)
-    font_big = ImageFont.truetype("arialbd.ttf", 32)
-    font_small = ImageFont.truetype("arial.ttf", 22)
+    # Font paths
+    BASE_DIR = Path(__file__).resolve().parent.parent  # go up from /cogs to project root
+    FONT_PATH = BASE_DIR / "ARIAL.TTF"  # use your font file
+
+    # Fonts
+    font_big = ImageFont.truetype(str(FONT_PATH), 32)
+    font_small = ImageFont.truetype(str(FONT_PATH), 22)
 
     # Title
     draw.text((width // 2, 20), "• TRADE •", font=font_big, fill=(255, 165, 0), anchor="mm")
