@@ -23,6 +23,26 @@ class DeleteTicketView(View):
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
 # ------------------------- Helpers -------------------------
+# ------------------------- Helpers -------------------------
+INV = "\u200E"      # invisible char used inside [ ] so the link is clickable but not visible
+ZWS = "\u200B"      # zero width space for empty field names
+
+def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
+    """Return a static PNG avatar URL (works for animated avatars too)."""
+    try:
+        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
+    except Exception:
+        try:
+            return user.display_avatar.with_static_format("png").url     # backwards compat
+        except Exception:
+            return user.display_avatar.url
+
+async def _count_user_tickets(uid: int) -> int:
+    colls = await collections()
+    tickets_coll = colls["tickets"]
+    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+
+# NOW define the embed builder, which uses the helpers above
 def _build_trade_embed(
     user1: discord.Member,
     user2: discord.Member | None,
