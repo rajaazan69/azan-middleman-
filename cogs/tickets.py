@@ -46,39 +46,41 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
     # Avatar URLs
-    avatar1 = _avatar_url(user1, 128) if user1 else PLACEHOLDER_AVATAR  # Smaller for author icon
-    avatar2 = _avatar_url(user2, 128) if user2 else PLACEHOLDER_AVATAR  # Smaller for footer icon
+    avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR  # Smaller size looks better as thumbnail
+    avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
 
-    # CREATE A SINGLE PERFECT EMBED
-    embed = discord.Embed(color=0x000000)
-    # Set the description to the top message
-    embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
+    # 1) MAIN EMBED: Top text and first avatar
+    embed1 = discord.Embed(color=0x000000)
+    # Set the description EXACTLY like screenshot
+    embed1.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
     
-    # Add fields for each user's offer (PERFECT layout)
-    embed.add_field(
+    # Add fields EXACTLY like screenshot layout
+    embed1.add_field(
         name=f"[{count1}] {user1.display_name}'s side:",
         value=side1 if side1.strip() else "—",
         inline=False
     )
-    embed.add_field(
+    embed1.add_field(
         name=f"[{count2}] {user2.display_name if user2 else 'Unknown'}'s side:",
-        value=side2 if side2.strip() else "—",
+        value=side2 if side2.strip() else "—", 
         inline=False
     )
-    
-    # Set first avatar as AUTHOR ICON (top left, small)
-    embed.set_author(name="\u200b", icon_url=avatar1)  # \u200b is zero-width space
-    
-    # Set second avatar as FOOTER ICON (bottom left, small)
-    if trade_desc and trade_desc.strip():
-        embed.set_footer(text=f"Trade: {trade_desc}", icon_url=avatar2)
-    else:
-        embed.set_footer(text="\u200b", icon_url=avatar2)
+    # Set first avatar as thumbnail (top right)
+    embed1.set_thumbnail(url=avatar1)
 
-    # Send SINGLE PERFECT EMBED
+    # 2) SECOND EMBED: Just contains the second avatar as thumbnail
+    embed2 = discord.Embed(color=0x000000)
+    embed2.set_thumbnail(url=avatar2)
+
+    # 3) THIRD EMBED: Just for the footer/trade description
+    embed3 = discord.Embed(color=0x000000)
+    if trade_desc and trade_desc.strip():
+        embed3.set_footer(text=f"Trade: {trade_desc}")
+
+    # Send all embeds in a single message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embed=embed,
+        embeds=[embed1, embed2, embed3],
         view=DeleteTicketView(owner_id=user1.id)
     )
 # ------------------------- Close Panel -------------------------
