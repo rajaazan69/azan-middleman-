@@ -46,29 +46,37 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
     # Avatar URLs
-    avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
-    avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
+    avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # 1) MAIN EMBED: Contains ALL the text and trade footer
-    embed1 = discord.Embed(color=0x000000)
-    embed1.title = "• Trade •"  # KEEP THIS, it's in your result!
-    embed1.description = (
-        f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}\n"
-        f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
+    # Common URL for "glue effect"
+    common_url = "https://discord.com"
+
+    # 1) Embed with all text + trader 1 thumbnail
+    embed1 = discord.Embed(
+        title="• Trade •",
+        description=(
+            f"**[{count1}] {user1.mention}**: {side1 if side1.strip() else '—'}\n"
+            f"**[{count2}] {user2.mention if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
+        ),
+        color=0x000000
     )
-    # ADD THE TRADE FOOTER TO THE MAIN EMBED
-    if trade_desc and trade_desc.strip():
-        embed1.set_footer(text=f"Trade: {trade_desc}")
-    embed1.set_thumbnail(url=avatar1)  # first avatar
+    embed1.set_thumbnail(url=avatar1)
+    embed1.set_url(common_url)
 
-    # 2) SECOND EMBED: ONLY the second avatar
+    # 2) Embed with trader 2 thumbnail only
     embed2 = discord.Embed(color=0x000000)
-    embed2.set_thumbnail(url=avatar2)  # second avatar
+    embed2.set_thumbnail(url=avatar2)
+    embed2.set_url(common_url)
 
-    # Send ONLY TWO EMBEDS (main + avatar)
+    # 3) Empty embed to glue
+    embed3 = discord.Embed(color=0x000000)
+    embed3.set_url(common_url)
+
+    # Send all embeds together (visually glued)
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed1, embed2],  # ONLY 2 EMBEDS NOW
+        embeds=[embed1, embed2, embed3],
         view=DeleteTicketView(owner_id=user1.id)
     )
 # ------------------------- Close Panel -------------------------
