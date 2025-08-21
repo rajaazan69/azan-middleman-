@@ -25,8 +25,9 @@ class DeleteTicketView(View):
 # ------------------------- Helpers -------------------------
 # ------------------------- Helpers -------------------------
 # ------------------------- Helpers -------------------------
+# ------------------------- Helpers -------------------------
 ZWS = "\u200B"      # Use for completely empty field names
-INV = "\u200D"      # Use Zero-Width Joiner for invisible links (better compatibility)
+INV = ""            # <--- EMPTY STRING! This is the key.
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"     # zero width space for empty field names
 
 def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
