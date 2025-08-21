@@ -59,19 +59,20 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
             f"**Trader 2:** {user2.mention if user2 else 'Unknown'}\n"
             f"**Side:** {side2 if side2.strip() else '—'}"
         ),
-        color=0x000000
-    ).set_url(common_url)
+        color=0x000000,
+        url=common_url
+    )
 
     # 2) Trader 1 avatar only
-    embed2 = discord.Embed(color=0x000000).set_url(common_url)
+    embed2 = discord.Embed(color=0x000000, url=common_url)
     embed2.set_image(url=avatar1)
 
     # 3) Trader 2 avatar only
-    embed3 = discord.Embed(color=0x000000).set_url(common_url)
+    embed3 = discord.Embed(color=0x000000, url=common_url)
     embed3.set_image(url=avatar2)
 
-    # 4) Optional footer / logo / divider (can remove if not needed)
-    embed4 = discord.Embed(color=0x000000).set_url(common_url)
+    # 4) Optional footer / logo / divider
+    embed4 = discord.Embed(color=0x000000, url=common_url)
     if trade_desc and trade_desc.strip():
         embed4.set_footer(text=f"Trade: {trade_desc}")
 
