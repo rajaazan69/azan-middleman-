@@ -50,37 +50,34 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
     # -------------------------
-    # 1) Main embed: header + text
+    # Embed 1: Header + Trader 1
     # -------------------------
     embed1 = discord.Embed(
         title="• Trade •",
         color=0x000000,
-        description=(
-            f"**[{count1}] {user1.mention}** — {side1 if side1.strip() else '—'}\n"
-            f"**[{count2}] {user2.mention if user2 else 'Unknown'}** — {side2 if side2.strip() else '—'}"
-        )
+        description=f"**[{count1}] {user1.mention}** — {side1 if side1.strip() else '—'}"
     )
-    embed1.set_thumbnail(url=avatar1)  # trader 1 avatar
+    embed1.set_thumbnail(url=avatar1)  # avatar right of trader 1 line
 
     # -------------------------
-    # 2) Trader 2 avatar embed (glue effect)
+    # Embed 2: Trader 2 info
     # -------------------------
-    embed2 = discord.Embed(color=0x000000)
-    embed2.set_thumbnail(url=avatar2)
+    embed2 = discord.Embed(
+        color=0x000000,
+        description=f"**[{count2}] {user2.mention if user2 else 'Unknown'}** — {side2 if side2.strip() else '—'}"
+    )
+    embed2.set_thumbnail(url=avatar2)  # avatar right of trader 2 line
 
     # -------------------------
-    # 3) Placeholder embed (optional, keeps them visually connected)
+    # Embed 3 & 4: Glue placeholders (keep visual continuity)
     # -------------------------
     embed3 = discord.Embed(color=0x000000)
     embed3.set_thumbnail(url=avatar1)
 
-    # -------------------------
-    # 4) Placeholder embed (optional, keeps symmetry)
-    # -------------------------
     embed4 = discord.Embed(color=0x000000)
     embed4.set_thumbnail(url=avatar2)
 
-    # Send all embeds as a single “glued” message
+    # Send all 4 embeds together
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embeds=[embed1, embed2, embed3, embed4],
