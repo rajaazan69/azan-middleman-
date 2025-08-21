@@ -59,19 +59,23 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
             f"**[{count1}] {user1.mention}**: {side1 if side1.strip() else '—'}\n"
             f"**[{count2}] {user2.mention if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
         ),
-        color=0x000000
+        color=0x000000,
+        url=common_url  # glue
     )
     embed1.set_thumbnail(url=avatar1)
-    embed1.set_url(common_url)
 
     # 2) Embed with trader 2 thumbnail only
-    embed2 = discord.Embed(color=0x000000)
+    embed2 = discord.Embed(
+        color=0x000000,
+        url=common_url  # glue
+    )
     embed2.set_thumbnail(url=avatar2)
-    embed2.set_url(common_url)
 
     # 3) Empty embed to glue
-    embed3 = discord.Embed(color=0x000000)
-    embed3.set_url(common_url)
+    embed3 = discord.Embed(
+        color=0x000000,
+        url=common_url  # glue
+    )
 
     # Send all embeds together (visually glued)
     await ticket_channel.send(
