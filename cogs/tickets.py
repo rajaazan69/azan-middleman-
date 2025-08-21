@@ -40,6 +40,7 @@ async def _count_user_tickets(uid: int) -> int:
     tickets_coll = colls["tickets"]
     return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
 
+
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     # Count tickets for each user
     count1 = await _count_user_tickets(user1.id)
@@ -49,37 +50,27 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # Common URL for "glue effect"
-    common_url = "https://discord.com"
-
-    # 1) Embed with all text + trader 1 thumbnail
+    # 1) Header embed (• Trade • centered)
     embed1 = discord.Embed(
         title="• Trade •",
-        description=(
-            f"**[{count1}] {user1.mention}**: {side1 if side1.strip() else '—'}\n"
-            f"**[{count2}] {user2.mention if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
-        ),
-        color=0x000000,
-        url=common_url  # glue
+        color=0x000000
     )
-    embed1.set_thumbnail(url=avatar1)
+    embed1.description = (
+        f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}\n"
+        f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
+    )
+    embed1.set_thumbnail(url=avatar1)  # first trader avatar top-right
 
-    # 2) Embed with trader 2 thumbnail only
-    embed2 = discord.Embed(
-        color=0x000000,
-        url=common_url  # glue
-    )
+    # 2) Second embed: Trader 2 avatar top-right
+    embed2 = discord.Embed(color=0x000000)
     embed2.set_thumbnail(url=avatar2)
 
-    # 3) Empty embed to glue
-    # 3) Empty embed to glue
-    embed3 = discord.Embed(
-    color=0x000000,
-    url=common_url,
-    description="\u200b"  # invisible filler
-    )
+    # 3) Optional footer / trade description
+    embed3 = discord.Embed(color=0x000000)
+    if trade_desc and trade_desc.strip():
+        embed3.set_footer(text=f"Trade: {trade_desc}")
 
-    # Send all embeds together (visually glued)
+    # Send all embeds in a single message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embeds=[embed1, embed2, embed3],
