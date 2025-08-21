@@ -24,8 +24,10 @@ class DeleteTicketView(View):
 
 # ------------------------- Helpers -------------------------
 # ------------------------- Helpers -------------------------
-INV = "\u200E"      # invisible char used inside [ ] so the link is clickable but not visible
-ZWS = "\u200B"      # zero width space for empty field names
+# ------------------------- Helpers -------------------------
+ZWS = "\u200B"      # Use for completely empty field names
+INV = "\u200D"      # Use Zero-Width Joiner for invisible links (better compatibility)
+PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"     # zero width space for empty field names
 
 def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
     """Return a static PNG avatar URL (works for animated avatars too)."""
@@ -57,47 +59,42 @@ def _build_trade_embed(
     Left column: User's offer text.
     Right column: Clickable avatar link.
     """
-    avatar1 = _avatar_url(user1, 1024)
-    # Use a default Discord avatar if user2 is not provided or fetchable
-    avatar2 = _avatar_url(user2, 1024) if user2 else "https://cdn.discordapp.com/embed/avatars/0.png"
+    # Get avatars safely - use placeholder if None
+    avatar1 = _avatar_url(user1, 1024) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2, 1024) if user2 else PLACEHOLDER_AVATAR
 
-    embed = discord.Embed(color=0x000000) # Pure black, as in your image
+    embed = discord.Embed(color=0x000000)
     # Set the description to the top message
-    embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
+    other_user_mention = user2.mention if user2 else 'a user'
+    embed.description = f"{user1.mention} has created a ticket with {other_user_mention}.\nA middleman will be with you shortly."
 
     # --- Row 1: User 1 ---
-    # Field 1: User1's offer text
     embed.add_field(
         name=f"[{count1}] {user1.display_name}'s side:",
-        value=side1 if side1.strip() else "—",  # Use "—" if the field is empty
+        value=side1 if side1.strip() else "—",
         inline=True
     )
-    # Field 2: User1's avatar (invisible link)
+    # The fix: Use ZWJ (\u200D) inside the markdown link
     embed.add_field(
-        name=ZWS, # This is the key: an empty field name
-        value=f"[{INV}]({avatar1})", # Invisible text, but the link works
+        name=ZWS,  # Empty field name
+        value=f"[{INV}]({avatar1})",  # This should now be truly invisible
         inline=True
     )
-    # That's it for the row. Don't add a third field.
 
     # --- Row 2: User 2 ---
-    # Field 3: User2's offer text
     u2_display_name = user2.display_name if user2 else "Unknown"
     embed.add_field(
         name=f"[{count2}] {u2_display_name}'s side:",
         value=side2 if side2.strip() else "—",
         inline=True
     )
-    # Field 4: User2's avatar (or a placeholder)
     embed.add_field(
         name=ZWS,
         value=f"[{INV}]({avatar2})",
         inline=True
     )
-    # Again, no third field.
 
-    # Add the trade description to the footer if it exists
-    if trade_desc:
+    if trade_desc and trade_desc.strip():
         embed.set_footer(text=f"Trade: {trade_desc}")
 
     return embed
