@@ -42,40 +42,40 @@ async def _count_user_tickets(uid: int) -> int:
 
 
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Count tickets for each user
+    # Count tickets
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Avatar URLs
+    # Avatars
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
-    # Common URL to glue embeds
-    common_url = "https://discord.com"
-
-    # First embed: User1 side + Trade header
+    # User1 embed
     embed1 = discord.Embed(
         title="__**• Trade •**__" if trade_desc else None,
         description=(
-            f"> **[{count1}] {user1.mention} side:**\n"
-            f"> **{side1}**"
+            f"| **[{count1}] {user1.mention} side:**\n"
+            f"| **{side1}**"
         ),
-        color=0x000000,
-        url=common_url
+        color=0x000000
     )
     embed1.set_thumbnail(url=avatar1)
 
-    # Second embed: User2 side, minimized height with invisible padding trick
+    # User2 embed (shrunk)
     embed2 = discord.Embed(
         description=(
-            "\u200b"  # invisible zero-width char to reduce padding
-            f"> **[{count2}] {user2.mention} side:**\n"
-            f"> **{side2}**"
+            f"\u200b| **[{count2}] {user2.mention} side:**\n"
+            f"| **{side2}**"
         ),
-        color=0x000000,
-        url=common_url
+        color=0x000000
     )
     embed2.set_thumbnail(url=avatar2)
+
+    # Send both embeds together
+    await ticket_channel.send(
+        embeds=[embed1, embed2],
+        view=DeleteTicketView(owner_id=user1.id)
+    )
 
     # Send both embeds visually glued with delete button
     await ticket_channel.send(
