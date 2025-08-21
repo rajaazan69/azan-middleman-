@@ -43,7 +43,7 @@ async def _count_user_tickets(uid: int) -> int:
 # ------------------------- Send Trade Embed -------------------------
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Count tickets for each user
+    # Count tickets
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
@@ -51,30 +51,35 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # Single embed version
-    embed = discord.Embed(
+    # Common URL for glue effect
+    common_url = "https://discord.com"
+
+    # 1) Header + text
+    embed1 = discord.Embed(
         title="• Trade •",
-        color=0x000000,
         description=(
             f"**[{count1}] {user1.mention}** — {side1 if side1.strip() else '—'}\n"
             f"**[{count2}] {user2.mention if user2 else 'Unknown'}** — {side2 if side2.strip() else '—'}"
-        )
-    )
+        ),
+        color=0x000000
+    ).set_image(url=avatar1)  # first avatar large
 
-    # Thumbnails for avatars (top-right)
-    embed.set_thumbnail(url=avatar1)  # first trader avatar
+    # 2) Trader 2 avatar only
+    embed2 = discord.Embed(color=0x000000)
+    embed2.set_image(url=avatar2)
 
-    # To include second avatar next to the second user, we can use inline fields
-    embed.add_field(
-        name="\u200b",  # blank field for alignment
-        value=f"[Avatar]({avatar2})",  # clickable avatar link
-        inline=True
-    )
+    # 3) Optional divider / placeholder embed to force Discord layout
+    embed3 = discord.Embed(color=0x000000)
+    embed3.set_image(url=avatar1)  # repeat first avatar to keep the embeds “glued”
 
-    # Send in one message
+    # 4) Optional final placeholder embed for symmetry
+    embed4 = discord.Embed(color=0x000000)
+    embed4.set_image(url=avatar2)
+
+    # Send all 4 embeds in a single message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed],
+        embeds=[embed1, embed2, embed3, embed4],
         view=DeleteTicketView(owner_id=user1.id)
     )
 # ------------------------- Close Panel -------------------------
