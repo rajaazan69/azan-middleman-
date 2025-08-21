@@ -50,15 +50,15 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
-    # Shared URL for "embed merging" trick
-    shared_url = "https://your-bot-site-or-any-url.com"
+    # Common URL so they glue visually
+    glue_url = "https://example.com/trade"
 
     # First embed: User1 side
     embed1 = discord.Embed(
         title="• Trade •" if trade_desc else None,
         description=f"[{count1}] {user1.mention} side:\n{side1}",
         color=0x000000,
-        url=shared_url
+        url=glue_url
     )
     embed1.set_thumbnail(url=avatar1)
 
@@ -66,11 +66,11 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     embed2 = discord.Embed(
         description=f"[{count2}] {user2.mention} side:\n{side2}",
         color=0x000000,
-        url=shared_url
+        url=glue_url
     )
     embed2.set_thumbnail(url=avatar2)
 
-    # Send both together so they stack like one block
+    # Send both glued
     await ticket_channel.send(embeds=[embed1, embed2])
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
