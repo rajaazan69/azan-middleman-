@@ -43,46 +43,40 @@ async def _count_user_tickets(uid: int) -> int:
 # ------------------------- Send Trade Embed -------------------------
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Common URL for the "glue effect"
-    common_url = "https://discord.com"
+    # Count tickets for each user
+    count1 = await _count_user_tickets(user1.id)
+    count2 = await _count_user_tickets(user2.id) if user2 else 0
 
     # Avatar URLs
     avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # 1) Header + text info
+    # 1) Header embed (• Trade • centered)
     embed1 = discord.Embed(
         title="• Trade •",
-        description=(
-            f"**Trader 1:** {user1.mention}\n"
-            f"**Side:** {side1 if side1.strip() else '—'}\n\n"
-            f"**Trader 2:** {user2.mention if user2 else 'Unknown'}\n"
-            f"**Side:** {side2 if side2.strip() else '—'}"
-        ),
-        color=0x000000,
-        url=common_url
+        color=0x000000
     )
+    embed1.description = (
+        f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}\n"
+        f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
+    )
+    embed1.set_thumbnail(url=avatar1)  # first trader avatar top-right
 
-    # 2) Trader 1 avatar only
-    embed2 = discord.Embed(color=0x000000, url=common_url)
-    embed2.set_image(url=avatar1)
+    # 2) Second embed: Trader 2 avatar top-right
+    embed2 = discord.Embed(color=0x000000)
+    embed2.set_thumbnail(url=avatar2)
 
-    # 3) Trader 2 avatar only
-    embed3 = discord.Embed(color=0x000000, url=common_url)
-    embed3.set_image(url=avatar2)
-
-    # 4) Optional footer / logo / divider
-    embed4 = discord.Embed(color=0x000000, url=common_url)
+    # 3) Optional footer / trade description
+    embed3 = discord.Embed(color=0x000000)
     if trade_desc and trade_desc.strip():
-        embed4.set_footer(text=f"Trade: {trade_desc}")
+        embed3.set_footer(text=f"Trade: {trade_desc}")
 
-    # Send them together
+    # Send all embeds in a single message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed1, embed2, embed3, embed4],
+        embeds=[embed1, embed2, embed3],
         view=DeleteTicketView(owner_id=user1.id)
     )
-
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
