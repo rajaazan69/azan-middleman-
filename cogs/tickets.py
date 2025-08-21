@@ -23,24 +23,6 @@ class DeleteTicketView(View):
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
 # ------------------------- Helpers -------------------------
-INV = "\u200E"      # invisible char used inside [ ] so the link is clickable but not visible
-ZWS = "\u200B"      # zero width space for empty field names
-
-def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
-    """Return a static PNG avatar URL (works for animated avatars too)."""
-    try:
-        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
-    except Exception:
-        try:
-            return user.display_avatar.with_static_format("png").url     # backwards compat
-        except Exception:
-            return user.display_avatar.url
-
-async def _count_user_tickets(uid: int) -> int:
-    colls = await collections()
-    tickets_coll = colls["tickets"]
-    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
-
 def _build_trade_embed(
     user1: discord.Member,
     user2: discord.Member | None,
@@ -51,49 +33,50 @@ def _build_trade_embed(
     count2: int
 ) -> discord.Embed:
     """
-    Real embed (no canvas). Two rows of inline fields:
-      [count] @user's side:         [clickable avatar link]
-      side text                      (empty name)
+    Builds a clean trade embed with two columns.
+    Left column: User's offer text.
+    Right column: Clickable avatar link.
     """
     avatar1 = _avatar_url(user1, 1024)
-    avatar2 = _avatar_url(user2, 1024) if user2 else None
+    # Use a default Discord avatar if user2 is not provided or fetchable
+    avatar2 = _avatar_url(user2, 1024) if user2 else "https://cdn.discordapp.com/embed/avatars/0.png"
 
-    # NOTE: color #000000 per your style
-    embed = discord.Embed(color=0x000000)
-    embed.title = "• Trade •"
+    embed = discord.Embed(color=0x000000) # Pure black, as in your image
+    # Set the description to the top message
+    embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
 
-    # Row 1: User1
+    # --- Row 1: User 1 ---
+    # Field 1: User1's offer text
     embed.add_field(
-        name=f"[{count1}] {user1.mention}'s side:",
-        value=side1 if side1 else "—",
+        name=f"[{count1}] {user1.display_name}'s side:",
+        value=side1 if side1.strip() else "—",  # Use "—" if the field is empty
         inline=True
     )
+    # Field 2: User1's avatar (invisible link)
+    embed.add_field(
+        name=ZWS, # This is the key: an empty field name
+        value=f"[{INV}]({avatar1})", # Invisible text, but the link works
+        inline=True
+    )
+    # That's it for the row. Don't add a third field.
+
+    # --- Row 2: User 2 ---
+    # Field 3: User2's offer text
+    u2_display_name = user2.display_name if user2 else "Unknown"
+    embed.add_field(
+        name=f"[{count2}] {u2_display_name}'s side:",
+        value=side2 if side2.strip() else "—",
+        inline=True
+    )
+    # Field 4: User2's avatar (or a placeholder)
     embed.add_field(
         name=ZWS,
-        value=f"[{INV}]({avatar1})",
+        value=f"[{INV}]({avatar2})",
         inline=True
     )
+    # Again, no third field.
 
-    # Force a clean two-column layout (Discord arranges in 3 columns by default).
-    # This dummy spacer ensures each row stays two fields wide visually.
-    embed.add_field(name=ZWS, value=ZWS, inline=True)
-
-    # Row 2: User2
-    u2_name = f"[{count2}] {user2.mention}'s side:" if user2 else f"[{count2}] @Unknown's side:"
-    embed.add_field(
-        name=u2_name,
-        value=side2 if side2 else "—",
-        inline=True
-    )
-    embed.add_field(
-        name=ZWS,
-        value=f"[{INV}]({avatar2})" if avatar2 else ZWS,
-        inline=True
-    )
-    # Pad row 2 as well
-    embed.add_field(name=ZWS, value=ZWS, inline=True)
-
-    # Footer shows the trade summary line
+    # Add the trade description to the footer if it exists
     if trade_desc:
         embed.set_footer(text=f"Trade: {trade_desc}")
 
