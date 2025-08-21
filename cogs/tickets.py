@@ -57,23 +57,19 @@ def _build_trade_embed(
     count2: int
 ) -> discord.Embed:
     """
-    Builds the EXACT embed from the screenshot.
+    Guaranteed working version. Puts the avatar link NEXT to the text in the value.
     """
     avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
 
     embed = discord.Embed(color=0x000000, description=f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly.")
 
-    # User 1 Row - THE KEY IS USING inline=True FOR BOTH FIELDS IN THE ROW
-    embed.add_field(name=f"[{count1}] {user1.display_name}'s side:", value=side1 or "—", inline=True)
-    embed.add_field(name=ZWS, value=f"[{INV}]({avatar1})", inline=True) # Avatar link next to the text
-    embed.add_field(name=ZWS, value=ZWS, inline=True) # Invisible spacer to end the row
+    # Combine the text and the avatar link for the value
+    value1 = f"{side1 or '—'} []({avatar1})" # The link is placed right after the text
+    value2 = f"{side2 or '—'} []({avatar2})" if user2 else (side2 or "—")
 
-    # User 2 Row
-    u2_name = f"[{count2}] {user2.display_name}'s side:" if user2 else f"[{count2}] Unknown's side:"
-    embed.add_field(name=u2_name, value=side2 or "—", inline=True)
-    embed.add_field(name=ZWS, value=f"[{INV}]({avatar2})" if user2 else ZWS, inline=True)
-    embed.add_field(name=ZWS, value=ZWS, inline=True) # Invisible spacer to end the row
+    embed.add_field(name=f"[{count1}] {user1.display_name}'s side:", value=value1, inline=False)
+    embed.add_field(name=f"[{count2}] {user2.display_name if user2 else 'Unknown'}'s side:", value=value2, inline=False)
 
     if trade_desc and trade_desc.strip():
         embed.set_footer(text=f"Trade: {trade_desc}")
