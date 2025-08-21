@@ -55,8 +55,7 @@ def _build_trade_embed(
     count2: int
 ) -> discord.Embed:
     """
-    Builds the EXACT embed from the screenshot.
-    The avatar is placed as a clickable icon in the field NAME.
+    FINAL ATTEMPT: Tries to force Discord to show an image preview by putting the raw URL in the value.
     """
     avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
@@ -64,18 +63,23 @@ def _build_trade_embed(
     embed = discord.Embed(color=0x000000)
     embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
 
-    # For User1: The field name contains the text AND the avatar link as a small icon.
+    # For User1: Put the avatar URL directly in the value, hoping Discord previews it.
+    value1 = f"{side1}\n{avatar1}" if side1.strip() else avatar1
     embed.add_field(
-        name=f"[{count1}] {user1.display_name}'s side: []({avatar1})",  # <-- LINK IN THE NAME
-        value=side1 if side1.strip() else "—",
+        name=f"[{count1}] {user1.display_name}'s side:",
+        value=value1,  # The raw image URL is placed here
         inline=False
     )
     
     # For User2: Do the same thing.
-    u2_name = f"[{count2}] {user2.display_name}'s side:" if user2 else f"[{count2}] Unknown's side:"
+    if user2:
+        value2 = f"{side2}\n{avatar2}" if side2.strip() else avatar2
+    else:
+        value2 = side2 or "—"
+        
     embed.add_field(
-        name=f"{u2_name} []({avatar2})" if user2 else u2_name,  # <-- LINK IN THE NAME
-        value=side2 if side2.strip() else "—",
+        name=f"[{count2}] {user2.display_name if user2 else 'Unknown'}'s side:",
+        value=value2,  # The raw image URL is placed here
         inline=False
     )
 
