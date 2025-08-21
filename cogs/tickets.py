@@ -50,27 +50,37 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # 1) Header embed (• Trade • centered)
+    # Shared URL to "glue" embeds
+    glue_url = "https://discord.com/trade"
+
+    # 1) Header embed
     embed1 = discord.Embed(
         title="• Trade •",
-        color=0x000000
+        color=0x000000,
+        url=glue_url
     )
     embed1.description = (
         f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}\n"
         f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
     )
-    embed1.set_thumbnail(url=avatar1)  # first trader avatar top-right
+    embed1.set_thumbnail(url=avatar1)
 
-    # 2) Second embed: Trader 2 avatar top-right
-    embed2 = discord.Embed(color=0x000000)
+    # 2) Avatar for second trader
+    embed2 = discord.Embed(
+        color=0x000000,
+        url=glue_url
+    )
     embed2.set_thumbnail(url=avatar2)
 
-    # 3) Optional footer / trade description
-    embed3 = discord.Embed(color=0x000000)
+    # 3) Footer / trade description
+    embed3 = discord.Embed(
+        color=0x000000,
+        url=glue_url
+    )
     if trade_desc and trade_desc.strip():
-        embed3.set_footer(text=f"Trade: {trade_desc}")
+        embed3.description = f"**Trade:** {trade_desc}"
 
-    # Send all embeds in a single message
+    # Send as one "glued" embed group
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embeds=[embed1, embed2, embed3],
