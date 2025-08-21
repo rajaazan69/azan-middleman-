@@ -1,21 +1,13 @@
 import re
-import io
-import math
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
-from io import BytesIO
-import aiohttp
 from datetime import datetime
 from utils.constants import (
     EMBED_COLOR, TICKET_CATEGORY_ID, MIDDLEMAN_ROLE_ID, OWNER_ID,
     LB_CHANNEL_ID, LB_MESSAGE_ID
 )
 from utils.db import collections
-from PIL import Image, ImageDraw, ImageFont
-
-# ====== CONFIG: your one-time Cloudinary base template ======
-CLOUDINARY_TEMPLATE_URL = "https://res.cloudinary.com/ddvgelgbg/image/upload/v1755638544/E9AADBCB-0F63-4CF6-A025-2EAF96945B9C_lltnoa.png"
 
 # ------------------------- Delete Button -------------------------
 class DeleteTicketView(View):
@@ -30,173 +22,94 @@ class DeleteTicketView(View):
         else:
             await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
 
-# ------------------------- Helper: fonts -------------------------
-def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """
-    Try common fonts; fall back to PIL default so we never error.
-    """
-    for name in ["DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "Arial.ttf"]:
+# ------------------------- Helpers -------------------------
+INV = "\u200E"      # invisible char used inside [ ] so the link is clickable but not visible
+ZWS = "\u200B"      # zero width space for empty field names
+
+def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
+    """Return a static PNG avatar URL (works for animated avatars too)."""
+    try:
+        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
+    except Exception:
         try:
-            return ImageFont.truetype(name, size=size)
+            return user.display_avatar.with_static_format("png").url     # backwards compat
         except Exception:
-            continue
-    return ImageFont.load_default()
+            return user.display_avatar.url
 
-# ------------------------- Helper: text utils -------------------------
-def _truncate_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_w: int) -> str:
+async def _count_user_tickets(uid: int) -> int:
+    colls = await collections()
+    tickets_coll = colls["tickets"]
+    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+
+def _build_trade_embed(
+    user1: discord.Member,
+    user2: discord.Member | None,
+    side1: str,
+    side2: str,
+    trade_desc: str,
+    count1: int,
+    count2: int
+) -> discord.Embed:
     """
-    Keep as much text as fits; add ellipsis if needed.
+    Real embed (no canvas). Two rows of inline fields:
+      [count] @user's side:         [clickable avatar link]
+      side text                      (empty name)
     """
-    if draw.textlength(text, font=font) <= max_w:
-        return text
-    ell = "…"
-    if draw.textlength(ell, font=font) > max_w:
-        return ""
-    lo, hi = 0, len(text)
-    while lo < hi:
-        mid = (lo + hi) // 2
-        t = text[:mid] + ell
-        if draw.textlength(t, font=font) <= max_w:
-            lo = mid + 1
-        else:
-            hi = mid
-    return text[:max(0, lo - 1)] + ell
+    avatar1 = _avatar_url(user1, 1024)
+    avatar2 = _avatar_url(user2, 1024) if user2 else None
 
-# ------------------------- Helper: fetch & prepare images -------------------------
-async def _fetch_bytes(url: str) -> bytes:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            resp.raise_for_status()
-            return await resp.read()
+    # NOTE: color #000000 per your style
+    embed = discord.Embed(color=0x000000)
+    embed.title = "• Trade •"
 
-def _square_fit(im: Image.Image, size: int) -> Image.Image:
-    """
-    Center-crop to square, then resize to (size, size).
-    """
-    w, h = im.size
-    side = min(w, h)
-    left = (w - side) // 2
-    top = (h - side) // 2
-    im = im.crop((left, top, left + side, top + side))
-    return im.resize((size, size), Image.LANCZOS)
+    # Row 1: User1
+    embed.add_field(
+        name=f"[{count1}] {user1.mention}'s side:",
+        value=side1 if side1 else "—",
+        inline=True
+    )
+    embed.add_field(
+        name=ZWS,
+        value=f"[{INV}]({avatar1})",
+        inline=True
+    )
 
-# ------------------------- Trade Image Generator (Template + PIL) -------------------------
-async def generate_trade_image(user1, user2, side1, side2, count1, count2):
-    """
-    Uses your Cloudinary template as background; overlays:
-      [count] @user1 side:
-      their side: <value>
-      [count] @user2 side:
-      their side: <value>     [avatar2 aligned to this line]
-    Avatars are SQUARE, hard-coded positions to match template.
-    """
-    # 1) Load base template
-    template_bytes = await _fetch_bytes(CLOUDINARY_TEMPLATE_URL)
-    base = Image.open(BytesIO(template_bytes)).convert("RGBA")
-    W, H = base.size
+    # Force a clean two-column layout (Discord arranges in 3 columns by default).
+    # This dummy spacer ensures each row stays two fields wide visually.
+    embed.add_field(name=ZWS, value=ZWS, inline=True)
 
-    # 2) Compute hard-coded layout (relative to template size)
-    # Margins & avatar sizing
-    margin_x = int(W * 0.055)           # left padding for text
-    right_margin = int(W * 0.055)       # right padding
-    avatar_size = int(H * 0.20)         # square avatar size
-    gap_y = int(H * 0.035)              # vertical gap between blocks
+    # Row 2: User2
+    u2_name = f"[{count2}] {user2.mention}'s side:" if user2 else f"[{count2}] @Unknown's side:"
+    embed.add_field(
+        name=u2_name,
+        value=side2 if side2 else "—",
+        inline=True
+    )
+    embed.add_field(
+        name=ZWS,
+        value=f"[{INV}]({avatar2})" if avatar2 else ZWS,
+        inline=True
+    )
+    # Pad row 2 as well
+    embed.add_field(name=ZWS, value=ZWS, inline=True)
 
-    # Title is already baked into template; we position beneath the first divider area.
-    # Choose y-anchors for two blocks that match your screenshot proportions:
-    block1_top = int(H * 0.27)          # top of user1 name line
-    block2_top = int(H * 0.59)          # top of user2 name line
+    # Footer shows the trade summary line
+    if trade_desc:
+        embed.set_footer(text=f"Trade: {trade_desc}")
 
-    # Text fonts (scale with canvas height)
-    name_size = max(22, int(H * 0.055))        # for "[count] @user side:"
-    side_size = max(20, int(H * 0.045))        # for "their side: ..."
-    font_name = _load_font(name_size)
-    font_side = _load_font(side_size)
-
-    # Avatar X positions (right aligned)
-    avatar_x = W - right_margin - avatar_size
-
-    # 3) Load avatars (square)
-    # user1 avatar aligned with the *name* line
-    a1_bytes = await _fetch_bytes(user1.display_avatar.with_static_format("png").url)
-    a1 = Image.open(BytesIO(a1_bytes)).convert("RGBA")
-    a1 = _square_fit(a1, avatar_size)
-
-    # user2 may be None
-    a2 = None
-    if user2:
-        a2_bytes = await _fetch_bytes(user2.display_avatar.with_static_format("png").url)
-        a2 = Image.open(BytesIO(a2_bytes)).convert("RGBA")
-        a2 = _square_fit(a2, avatar_size)
-
-    # 4) Draw text
-    draw = ImageDraw.Draw(base)
-
-    # Safe area width for text (so it doesn't collide with avatar)
-    max_text_w = avatar_x - margin_x - int(W * 0.02)
-
-    # -------- Block 1 (User1) --------
-    line1_text = f"[{count1}] @{user1.display_name} side:"
-    line1_text = _truncate_to_width(draw, line1_text, font_name, max_text_w)
-    draw.text((margin_x, block1_top), line1_text, fill="white", font=font_name)
-
-    side1_text = f"their side: {side1}"
-    side1_text = _truncate_to_width(draw, side1_text, font_side, max_text_w)
-    side1_y = block1_top + int(name_size * 1.25)
-    draw.text((margin_x, side1_y), side1_text, fill=(220, 220, 220, 255), font=font_side)
-
-    # Avatar1 aligned to name line
-    base.alpha_composite(a1, (avatar_x, block1_top))
-
-    # -------- Block 2 (User2) --------
-    # Name line
-    if user2:
-        line2_text = f"[{count2}] @{user2.display_name} side:"
-    else:
-        line2_text = f"[{count2}] @Unknown side:"
-    line2_text = _truncate_to_width(draw, line2_text, font_name, max_text_w)
-    draw.text((margin_x, block2_top), line2_text, fill="white", font=font_name)
-
-    # Side line (avatar aligned to this side line for user2)
-    side2_text = f"their side: {side2}"
-    side2_text = _truncate_to_width(draw, side2_text, font_side, max_text_w)
-    side2_y = block2_top + int(name_size * 1.25)
-    draw.text((margin_x, side2_y), side2_text, fill=(220, 220, 220, 255), font=font_side)
-
-    if a2:
-        # Align avatar to the SIDE line (as you requested)
-        base.alpha_composite(a2, (avatar_x, side2_y))
-
-    # 5) Export to bytes
-    out = BytesIO()
-    base.save(out, format="PNG")
-    out.seek(0)
-    return out
+    return embed
 
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    colls = await collections()
-    tickets_coll = colls["tickets"]
+    # Count occurrences for the [n] label
+    count1 = await _count_user_tickets(user1.id)
+    count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Count appearances where user is either user1 or user2 in your tickets collection
-    async def _count_user(uid: int) -> int:
-        return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
-
-    count1 = await _count_user(user1.id)
-    count2 = await _count_user(user2.id) if user2 else 0
-
-    image_bytes = await generate_trade_image(user1, user2, side1, side2, count1, count2)
-    file = discord.File(fp=image_bytes, filename="trade.png")
-
-    # Match Discord dark embed look
-    embed = discord.Embed(color=0x2F3136)
-    embed.set_image(url="attachment://trade.png")
-    embed.set_footer(text=f"Trade: {trade_desc}")
+    embed = _build_trade_embed(user1, user2, side1, side2, trade_desc, count1, count2)
 
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embed=embed,
-        file=file,
         view=DeleteTicketView(owner_id=user1.id)
     )
 
@@ -311,7 +224,7 @@ class TicketPanelView(View):
             q4 = TextInput(label="Their Discord ID?", required=False, max_length=20)
 
             async def on_submit(self, modal_interaction: discord.Interaction):
-                await modal_interaction.response.defer(ephemeral=True, thinking=False)
+                await modal_interaction.response.defer(ephemeral=True)
                 try:
                     colls = await collections()
                     cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
@@ -322,10 +235,16 @@ class TicketPanelView(View):
                                 return await modal_interaction.followup.send(f"❌ You already have an open ticket: {ch.mention}", ephemeral=True)
 
                     q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
+
+                    # Fetch target member reliably (uses API if not cached)
                     target_member = None
                     if q4v and re.fullmatch(r"\d{17,19}", q4v):
-                        target_member = modal_interaction.guild.get_member(int(q4v))
+                        try:
+                            target_member = await modal_interaction.guild.fetch_member(int(q4v))
+                        except Exception:
+                            target_member = None
 
+                    # Permission overwrites
                     overwrites = {
                         modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -351,7 +270,9 @@ class TicketPanelView(View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
+                    # >>> PURE EMBED VERSION (no canvas), avatars clickable on the right
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
+
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
 
                 except Exception as e:
