@@ -54,14 +54,14 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     embed1 = discord.Embed(
         title="• Trade •" if trade_desc else None,
         description=f"[{count1}] {user1.mention} side:\n{side1}",
-        discord.Embed(color=0x000000)
+        color=0x000000
     )
     embed1.set_thumbnail(url=avatar1)
 
     # Second embed: User2 side
     embed2 = discord.Embed(
         description=f"[{count2}] {user2.mention} side:\n{side2}",
-        discord.Embed(color=0x000000)
+        color=0x000000
     )
     embed2.set_thumbnail(url=avatar2)
 
