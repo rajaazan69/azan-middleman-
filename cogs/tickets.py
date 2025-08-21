@@ -46,12 +46,9 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Get avatar URLs (fallback if needed)
+    # Get avatar URLs
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
-
-    # Both embeds will use the same URL to “glue” together
-    common_url = "https://yourbotwebsite.com"
 
     # First embed: User1 side
     embed1 = discord.Embed(
@@ -60,7 +57,6 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
         color=0x000000
     )
     embed1.set_thumbnail(url=avatar1)
-    embed1.set_url(common_url)
 
     # Second embed: User2 side
     embed2 = discord.Embed(
@@ -68,9 +64,8 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
         color=0x000000
     )
     embed2.set_thumbnail(url=avatar2)
-    embed2.set_url(common_url)
 
-    # Send both embeds together
+    # Send both embeds in the same message
     await ticket_channel.send(embeds=[embed1, embed2])
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
