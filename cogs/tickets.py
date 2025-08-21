@@ -41,48 +41,44 @@ async def _count_user_tickets(uid: int) -> int:
     return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
 
 # ------------------------- Send Trade Embed -------------------------
+# ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Count occurrences for the [n] label
-    count1 = await _count_user_tickets(user1.id)
-    count2 = await _count_user_tickets(user2.id) if user2 else 0
+    # Common URL for the "glue effect"
+    common_url = "https://discord.com"
 
-    avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
-    avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
+    # Avatar URLs
+    avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # 1. FIRST EMBED: The top text description
-    embed1 = discord.Embed(color=0x000000, description=f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly.")
+    # 1) Header + text info
+    embed1 = discord.Embed(
+        title="• Trade •",
+        description=(
+            f"**Trader 1:** {user1.mention}\n"
+            f"**Side:** {side1 if side1.strip() else '—'}\n\n"
+            f"**Trader 2:** {user2.mention if user2 else 'Unknown'}\n"
+            f"**Side:** {side2 if side2.strip() else '—'}"
+        ),
+        color=0x000000
+    ).set_url(common_url)
 
-    # 2. SECOND EMBED: User1's side text
-    embed2 = discord.Embed(color=0x000000)
-    embed2.add_field(
-        name=f"[{count1}] {user1.display_name}'s side:",
-        value=side1 if side1.strip() else "—",
-        inline=False
-    )
+    # 2) Trader 1 avatar only
+    embed2 = discord.Embed(color=0x000000).set_url(common_url)
+    embed2.set_image(url=avatar1)
 
-    # 3. THIRD EMBED: User1's avatar image
-    embed3 = discord.Embed(color=0x000000)
-    embed3.set_image(url=avatar1) # Set the first user's avatar as the LARGE image for this embed
+    # 3) Trader 2 avatar only
+    embed3 = discord.Embed(color=0x000000).set_url(common_url)
+    embed3.set_image(url=avatar2)
 
-    # 4. FOURTH EMBED: User2's side text
-    embed4 = discord.Embed(color=0x000000)
-    u2_name = f"[{count2}] {user2.display_name}'s side:" if user2 else f"[{count2}] Unknown's side:"
-    embed4.add_field(
-        name=u2_name,
-        value=side2 if side2.strip() else "—",
-        inline=False
-    )
-
-    # 5. FIFTH EMBED: User2's avatar image AND the footer
-    embed5 = discord.Embed(color=0x000000)
-    embed5.set_image(url=avatar2) # Set the second user's avatar as the LARGE image for this embed
+    # 4) Optional footer / logo / divider (can remove if not needed)
+    embed4 = discord.Embed(color=0x000000).set_url(common_url)
     if trade_desc and trade_desc.strip():
-        embed5.set_footer(text=f"Trade: {trade_desc}")
+        embed4.set_footer(text=f"Trade: {trade_desc}")
 
-    # Send ALL FIVE embeds in a single message
+    # Send them together
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed1, embed2, embed3, embed4, embed5], # This is the key: a list of embeds
+        embeds=[embed1, embed2, embed3, embed4],
         view=DeleteTicketView(owner_id=user1.id)
     )
 
