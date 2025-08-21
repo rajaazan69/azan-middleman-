@@ -20,14 +20,10 @@ class DeleteTicketView(View):
         if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
             await interaction.channel.delete()
         else:
-            await interaction.response.send_message("❌ You don’t have permission to delete this ticket.", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
 
 # ------------------------- Helpers -------------------------
-# ------------------------- Helpers -------------------------
-# ------------------------- Helpers -------------------------
-# ------------------------- Helpers -------------------------
-# ------------------------- Helpers -------------------------
-PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"   # zero width space for empty field names
+PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
 
 def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
     """Return a static PNG avatar URL (works for animated avatars too)."""
@@ -44,61 +40,49 @@ async def _count_user_tickets(uid: int) -> int:
     tickets_coll = colls["tickets"]
     return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
 
-# NOW define the embed builder, which uses the helpers above
-def _build_trade_embed(
-    user1: discord.Member,
-    user2: discord.Member | None,
-    side1: str,
-    side2: str,
-    trade_desc: str,
-    count1: int,
-    count2: int
-) -> discord.Embed:
-    """
-    FINAL ATTEMPT: Tries to force Discord to show an image preview by putting the raw URL in the value.
-    """
-    avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
-    avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
-
-    embed = discord.Embed(color=0x000000)
-    embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
-
-    # For User1: Put the avatar URL directly in the value, hoping Discord previews it.
-    value1 = f"{side1}\n{avatar1}" if side1.strip() else avatar1
-    embed.add_field(
-        name=f"[{count1}] {user1.display_name}'s side:",
-        value=value1,  # The raw image URL is placed here
-        inline=False
-    )
-    
-    # For User2: Do the same thing.
-    if user2:
-        value2 = f"{side2}\n{avatar2}" if side2.strip() else avatar2
-    else:
-        value2 = side2 or "—"
-        
-    embed.add_field(
-        name=f"[{count2}] {user2.display_name if user2 else 'Unknown'}'s side:",
-        value=value2,  # The raw image URL is placed here
-        inline=False
-    )
-
-    if trade_desc and trade_desc.strip():
-        embed.set_footer(text=f"Trade: {trade_desc}")
-
-    return embed
-
 # ------------------------- Send Trade Embed -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     # Count occurrences for the [n] label
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    embed = _build_trade_embed(user1, user2, side1, side2, trade_desc, count1, count2)
+    avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
 
+    # 1. FIRST EMBED: The top text description
+    embed1 = discord.Embed(color=0x000000, description=f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly.")
+
+    # 2. SECOND EMBED: User1's side text
+    embed2 = discord.Embed(color=0x000000)
+    embed2.add_field(
+        name=f"[{count1}] {user1.display_name}'s side:",
+        value=side1 if side1.strip() else "—",
+        inline=False
+    )
+
+    # 3. THIRD EMBED: User1's avatar image
+    embed3 = discord.Embed(color=0x000000)
+    embed3.set_image(url=avatar1) # Set the first user's avatar as the LARGE image for this embed
+
+    # 4. FOURTH EMBED: User2's side text
+    embed4 = discord.Embed(color=0x000000)
+    u2_name = f"[{count2}] {user2.display_name}'s side:" if user2 else f"[{count2}] Unknown's side:"
+    embed4.add_field(
+        name=u2_name,
+        value=side2 if side2.strip() else "—",
+        inline=False
+    )
+
+    # 5. FIFTH EMBED: User2's avatar image AND the footer
+    embed5 = discord.Embed(color=0x000000)
+    embed5.set_image(url=avatar2) # Set the second user's avatar as the LARGE image for this embed
+    if trade_desc and trade_desc.strip():
+        embed5.set_footer(text=f"Trade: {trade_desc}")
+
+    # Send ALL FIVE embeds in a single message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embed=embed,
+        embeds=[embed1, embed2, embed3, embed4, embed5], # This is the key: a list of embeds
         view=DeleteTicketView(owner_id=user1.id)
     )
 
@@ -279,7 +263,7 @@ class Tickets(commands.Cog):
     async def setup_panel(self, ctx: commands.Context, channel: discord.TextChannel | None = None):
         target = channel or ctx.channel
         embed = discord.Embed(
-            title="Azan’s Middleman Service",
+            title="Azan's Middleman Service",
             description=(
                 "To request a middleman from this server\n"
                 "click the `Request Middleman` button below.\n\n"
