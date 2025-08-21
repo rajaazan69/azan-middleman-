@@ -73,11 +73,11 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
 
     # 3) Empty embed to glue
     # 3) Empty embed to glue
-embed3 = discord.Embed(
+    embed3 = discord.Embed(
     color=0x000000,
     url=common_url,
     description="\u200b"  # invisible filler
-)
+    )
 
     # Send all embeds together (visually glued)
     await ticket_channel.send(
