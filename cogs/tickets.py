@@ -76,12 +76,6 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
         embeds=[embed1, embed2],
         view=DeleteTicketView(owner_id=user1.id)
     )
-
-    # Send both embeds visually glued with delete button
-    await ticket_channel.send(
-        embeds=[embed1, embed2],
-        view=DeleteTicketView(owner_id=user1.id)
-    )
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
