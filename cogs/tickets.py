@@ -15,12 +15,20 @@ class DeleteTicketView(View):
         super().__init__(timeout=None)
         self.owner_id = owner_id
 
-    @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket")
+    @discord.ui.button(
+        label="Delete Ticket",
+        style=discord.ButtonStyle.danger,
+        emoji="<a:redcrossanimated:1103550228424032277>",
+        custom_id="delete_ticket"
+    )
     async def delete_button(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
             await interaction.channel.delete()
         else:
-            await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ You don't have permission to delete this ticket.",
+                ephemeral=True
+            )
 
 # ------------------------- Helpers -------------------------
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
