@@ -27,8 +27,6 @@ class DeleteTicketView(View):
 # ------------------------- Helpers -------------------------
 # ------------------------- Helpers -------------------------
 # ------------------------- Helpers -------------------------
-ZWS = "\u200B"      # Zero Width Space - for empty field names
-INV = "\u200C"      # Zero-Width Non-Joiner - let's try this one
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"   # zero width space for empty field names
 
 def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
@@ -57,19 +55,29 @@ def _build_trade_embed(
     count2: int
 ) -> discord.Embed:
     """
-    Guaranteed working version. Puts the avatar link NEXT to the text in the value.
+    Builds the EXACT embed from the screenshot.
+    The avatar is placed as a clickable icon in the field NAME.
     """
     avatar1 = _avatar_url(user1, 256) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 256) if user2 else PLACEHOLDER_AVATAR
 
-    embed = discord.Embed(color=0x000000, description=f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly.")
+    embed = discord.Embed(color=0x000000)
+    embed.description = f"{user1.mention} has created a ticket with {user2.mention if user2 else 'a user'}.\nA middleman will be with you shortly."
 
-    # Combine the text and the avatar link for the value
-    value1 = f"{side1 or '—'} []({avatar1})" # The link is placed right after the text
-    value2 = f"{side2 or '—'} []({avatar2})" if user2 else (side2 or "—")
-
-    embed.add_field(name=f"[{count1}] {user1.display_name}'s side:", value=value1, inline=False)
-    embed.add_field(name=f"[{count2}] {user2.display_name if user2 else 'Unknown'}'s side:", value=value2, inline=False)
+    # For User1: The field name contains the text AND the avatar link as a small icon.
+    embed.add_field(
+        name=f"[{count1}] {user1.display_name}'s side: []({avatar1})",  # <-- LINK IN THE NAME
+        value=side1 if side1.strip() else "—",
+        inline=False
+    )
+    
+    # For User2: Do the same thing.
+    u2_name = f"[{count2}] {user2.display_name}'s side:" if user2 else f"[{count2}] Unknown's side:"
+    embed.add_field(
+        name=f"{u2_name} []({avatar2})" if user2 else u2_name,  # <-- LINK IN THE NAME
+        value=side2 if side2.strip() else "—",
+        inline=False
+    )
 
     if trade_desc and trade_desc.strip():
         embed.set_footer(text=f"Trade: {trade_desc}")
