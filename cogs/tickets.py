@@ -50,40 +50,40 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1, 512) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 512) if user2 else PLACEHOLDER_AVATAR
 
-    # Shared URL to "glue" embeds
-    glue_url = "https://discord.com/trade"
+    # Shared URL (trick to glue embeds together visually)
+    glue_url = "https://discord.com/trade-card-glue"
 
-    # 1) Header embed
+    # 1) First embed with trader 1
     embed1 = discord.Embed(
         title="• Trade •",
+        description=f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}",
         color=0x000000,
         url=glue_url
     )
-    embed1.description = (
-        f"**[{count1}] {user1.display_name}**: {side1 if side1.strip() else '—'}\n"
-        f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}"
-    )
     embed1.set_thumbnail(url=avatar1)
 
-    # 2) Avatar for second trader
+    # 2) Second embed with trader 2
     embed2 = discord.Embed(
+        description=f"**[{count2}] {user2.display_name if user2 else 'Unknown'}**: {side2 if side2.strip() else '—'}",
         color=0x000000,
         url=glue_url
     )
     embed2.set_thumbnail(url=avatar2)
 
-    # 3) Footer / trade description
-    embed3 = discord.Embed(
-        color=0x000000,
-        url=glue_url
-    )
+    # 3) Footer / trade description embed (optional)
+    embeds = [embed1, embed2]
     if trade_desc and trade_desc.strip():
-        embed3.description = f"**Trade:** {trade_desc}"
+        embed3 = discord.Embed(
+            description=f"**Trade:** {trade_desc}",
+            color=0x000000,
+            url=glue_url
+        )
+        embeds.append(embed3)
 
-    # Send as one "glued" embed group
+    # Send all embeds in one message
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed1, embed2, embed3],
+        embeds=embeds,
         view=DeleteTicketView(owner_id=user1.id)
     )
 # ------------------------- Close Panel -------------------------
