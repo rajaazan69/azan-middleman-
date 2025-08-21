@@ -81,9 +81,14 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
 
     # Send both embeds together
     await ticket_channel.send(
-        embeds=[embed1, embed2],
-        view=DeleteTicketView(owner_id=user1.id)
-    )
+    content=(
+        f"**{user1.mention}** has created a ticket with **{user2.mention}**.\n"
+        "A middleman will be with you shortly.\n"
+        f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
+    ),
+    embeds=[embed1, embed2],
+    view=DeleteTicketView(owner_id=user1.id)
+)
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
