@@ -1,7 +1,7 @@
 import os
 import discord
 from discord.ext import commands
-from utils.constants import TICKET_CATEGORY_ID, OWNER_ID
+from utils.constants import TICKET_CATEGORY_ID, OWNER_ID, MIDDLEMAN_ROLE_ID
 from utils.db import collections
 from datetime import datetime
 
@@ -70,6 +70,27 @@ class TicketCommands(commands.Cog):
             pass
 
         await ctx.send("✅ Leaderboard has been reset.")
+
+    # ---------- SAY COMMAND ----------
+    @commands.command(name="say", help="Make the bot say anything.")
+    async def say(self, ctx, *, message: str):
+        await ctx.message.delete()
+        await ctx.send(message)
+
+    # ---------- OPEN TICKET ----------
+    @commands.command(name="open", help="Reopens a closed ticket.")
+    async def open(self, ctx):
+        ch = ctx.channel
+        if ch.category_id != TICKET_CATEGORY_ID:
+            return await ctx.send("❌ You can only open ticket channels.")
+        
+        overwrites = ch.overwrites
+        for target, perms in overwrites.items():
+            # Restore permissions for everyone removed
+            if perms.view_channel is False:
+                await ch.set_permissions(target, view_channel=True, send_messages=True)
+
+        await ctx.send("✅ Ticket reopened.")
 
 async def setup(bot):
     await bot.add_cog(TicketCommands(bot))
