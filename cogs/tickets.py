@@ -54,14 +54,14 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Avatar URLs
+    # Avatar URLs (small square for "fake thumbnails")
     avatar1 = _avatar_url(user1, 128) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2, 128) if user2 else PLACEHOLDER_AVATAR
 
-    # Glue URL trick
+    # Glue URL trick (needed to visually merge embeds)
     glue_url = "https://discord.com"
 
-    # Main embed with text + first avatar as thumbnail
+    # Embed 1: main text + first avatar as image
     embed1 = discord.Embed(
         title="__**• Trade •**__",
         description=(
@@ -73,17 +73,17 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
         color=0x000000,
         url=glue_url
     )
-    embed1.set_thumbnail(url=avatar1)
+    embed1.set_image(url=avatar1)  # use image instead of thumbnail
 
-    # Second embed: just the second avatar as thumbnail
+    # Embed 2: just the second avatar as an "image thumbnail"
     embed2 = discord.Embed(color=0x000000, url=glue_url)
-    embed2.set_thumbnail(url=avatar2)
+    embed2.set_image(url=avatar2)
 
-    # Two more empty embeds to glue visually
+    # Empty embeds to glue visually
     embed3 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
     embed4 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
 
-    # Send them all together so Discord renders them as a single block
+    # Send all together; Discord will render them almost like a single embed
     await ticket_channel.send(
         content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
         embeds=[embed1, embed2, embed3, embed4],
