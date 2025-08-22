@@ -49,46 +49,47 @@ async def _count_user_tickets(uid: int) -> int:
     return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
 
 
+
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     # Count tickets
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Avatar URLs (small square for "fake thumbnails")
-    avatar1 = _avatar_url(user1, 128) if user1 else PLACEHOLDER_AVATAR
-    avatar2 = _avatar_url(user2, 128) if user2 else PLACEHOLDER_AVATAR
+    # Avatars
+    avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
-    # Glue URL trick (needed to visually merge embeds)
-    glue_url = "https://discord.com"
-
-    # Embed 1: main text + first avatar as image
+    # User1 embed
     embed1 = discord.Embed(
-        title="__**• Trade •**__",
+        title="__**• Trade •**__" if trade_desc else None,
         description=(
             f"| **[{count1}] {user1.mention} side:**\n"
-            f"| **{side1}**\n\n"
-            f"| **[{count2}] {user2.mention} side:**\n"
+            f"| **{side1}**"
+        ),
+        color=0x000000
+    )
+    embed1.set_thumbnail(url=avatar1)
+
+    # User2 embed (shrunk)
+    embed2 = discord.Embed(
+        description=(
+            f"\u200b| **[{count2}] {user2.mention} side:**\n"
             f"| **{side2}**"
         ),
-        color=0x000000,
-        url=glue_url
+        color=0x000000
     )
-    embed1.set_image(url=avatar1)  # use image instead of thumbnail
+    embed2.set_thumbnail(url=avatar2)
 
-    # Embed 2: just the second avatar as an "image thumbnail"
-    embed2 = discord.Embed(color=0x000000, url=glue_url)
-    embed2.set_image(url=avatar2)
-
-    # Empty embeds to glue visually
-    embed3 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
-    embed4 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
-
-    # Send all together; Discord will render them almost like a single embed
+    # Send both embeds together
     await ticket_channel.send(
-        content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
-        embeds=[embed1, embed2, embed3, embed4],
-        view=DeleteTicketView(owner_id=user1.id)
-    )
+    content=(
+        f"**{user1.mention}** has created a ticket with **{user2.mention}**.\n"
+        "A middleman will be with you shortly.\n"
+        f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
+    ),
+    embeds=[embed1, embed2],
+    view=DeleteTicketView(owner_id=user1.id)
+)
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
