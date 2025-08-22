@@ -54,41 +54,41 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Avatars
-    avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
-    avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
+    # Avatar URLs
+    avatar1 = _avatar_url(user1, 128) if user1 else PLACEHOLDER_AVATAR
+    avatar2 = _avatar_url(user2, 128) if user2 else PLACEHOLDER_AVATAR
 
-    # User1 embed
+    # Glue URL trick
+    glue_url = "https://discord.com"
+
+    # Main embed with text + first avatar as thumbnail
     embed1 = discord.Embed(
-        title="__**• Trade •**__" if trade_desc else None,
+        title="__**• Trade •**__",
         description=(
             f"| **[{count1}] {user1.mention} side:**\n"
-            f"| **{side1}**"
+            f"| **{side1}**\n\n"
+            f"| **[{count2}] {user2.mention} side:**\n"
+            f"| **{side2}**"
         ),
-        color=0x000000
+        color=0x000000,
+        url=glue_url
     )
     embed1.set_thumbnail(url=avatar1)
 
-    # User2 embed (shrunk)
-    embed2 = discord.Embed(
-        description=(
-            f"\u200b| **[{count2}] {user2.mention} side:**\n"
-            f"| **{side2}**"
-        ),
-        color=0x000000
-    )
+    # Second embed: just the second avatar as thumbnail
+    embed2 = discord.Embed(color=0x000000, url=glue_url)
     embed2.set_thumbnail(url=avatar2)
 
-    # Send both embeds together
+    # Two more empty embeds to glue visually
+    embed3 = discord.Embed(color=0x000000, url=glue_url)
+    embed4 = discord.Embed(color=0x000000, url=glue_url)
+
+    # Send them all together so Discord renders them as a single block
     await ticket_channel.send(
-    content=(
-        f"**{user1.mention}** has created a ticket with **{user2.mention}**.\n"
-        "A middleman will be with you shortly.\n"
-        f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
-    ),
-    embeds=[embed1, embed2],
-    view=DeleteTicketView(owner_id=user1.id)
-)
+        content=f"<@{OWNER_ID}> <@&{MIDDLEMAN_ROLE_ID}>",
+        embeds=[embed1, embed2, embed3, embed4],
+        view=DeleteTicketView(owner_id=user1.id)
+    )
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
