@@ -80,8 +80,8 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     embed2.set_thumbnail(url=avatar2)
 
     # Two more empty embeds to glue visually
-    embed3 = discord.Embed(color=0x000000, url=glue_url)
-    embed4 = discord.Embed(color=0x000000, url=glue_url)
+    embed3 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
+    embed4 = discord.Embed(description="\u200b", color=0x000000, url=glue_url)
 
     # Send them all together so Discord renders them as a single block
     await ticket_channel.send(
