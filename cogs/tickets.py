@@ -13,21 +13,20 @@ from utils.db import collections
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
 
 def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
-    """Return a static PNG avatar URL (works for animated avatars too)."""
     try:
-        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
+        return user.display_avatar.replace(size=size, format="png").url
     except Exception:
         try:
             return user.display_avatar.with_static_format("png").url
         except Exception:
-            return user.display_avatar.url
+            return getattr(user, "avatar_url", PLACEHOLDER_AVATAR)
 
 async def _count_user_tickets(uid: int) -> int:
     colls = await collections()
     tickets_coll = colls["tickets"]
     return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
 
-# ------------------------- Legacy Delete View (kept for compatibility) -------------------------
+# ------------------------- Delete View -------------------------
 class DeleteTicketView(View):
     def __init__(self, owner_id: int):
         super().__init__(timeout=None)
@@ -41,126 +40,145 @@ class DeleteTicketView(View):
     )
     async def delete_button(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             await interaction.channel.delete()
         else:
-            await interaction.response.send_message(
-                "❌ You don't have permission to delete this ticket.",
-                ephemeral=True
-            )
+            await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
 
-# ------------------------- Claim + Delete (on the first message) -------------------------
+# ------------------------- Claim + Delete View -------------------------
 class ClaimAndDeleteView(View):
     def __init__(self, owner_id: int):
         super().__init__(timeout=None)
         self.owner_id = owner_id
 
-        @discord.ui.button(label="🔐 Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim")
-    async def claim_btn(self, interaction: discord.Interaction, _):
-        guild = interaction.guild
+    @discord.ui.button(label="🔐 Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim")
+    async def claim_button(self, interaction: discord.Interaction, button: Button):
         member = interaction.user
+        guild = interaction.guild
+        ch = interaction.channel
 
-        # Only middlemen can claim
         if not any(r.id == MIDDLEMAN_ROLE_ID for r in member.roles):
             return await interaction.response.send_message("❌ Only middlemen can claim tickets.", ephemeral=True)
 
-        ch = interaction.channel
+        colls = await collections()
+        tickets_coll = colls["tickets"]
+        ticket_doc = await tickets_coll.find_one({"channelId": str(ch.id)})
+        if ticket_doc and ticket_doc.get("claimedBy"):
+            return await interaction.response.send_message("❌ This ticket is already claimed.", ephemeral=True)
 
-        # Lock channel for MM role, allow the claimer to speak
-        overwrites = ch.overwrites.copy()
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+
         mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
         if mm_role:
-            current = overwrites.get(mm_role, discord.PermissionOverwrite())
-            current.view_channel = True
-            current.send_messages = False
-            overwrites[mm_role] = current
+            try:
+                await ch.set_permissions(mm_role, send_messages=False, view_channel=True)
+            except Exception:
+                pass
 
-        current_claimer = overwrites.get(member, discord.PermissionOverwrite())
-        current_claimer.view_channel = True
-        current_claimer.send_messages = True
-        overwrites[member] = current_claimer
+        try:
+            await ch.set_permissions(member, send_messages=True, view_channel=True)
+        except Exception:
+            pass
 
-        await ch.edit(overwrites=overwrites, name=f"ticket-{member.name}")
+        try:
+            await ch.edit(name=f"ticket-{member.name}")
+        except Exception:
+            try:
+                await ch.edit(name=f"ticket-{member.display_name}")
+            except Exception:
+                pass
 
-        # Say (not embed), then profile card
-        await interaction.response.send_message(f"{member.mention} will be your middleman for this trade.")
-
-        # Profile card
-        colls = await collections()
-        mm_coll = colls["middlemen"]
-        data = await mm_coll.find_one({"_id": member.id})
-        completed = int(data["completed"]) if data and "completed" in data else 0
-
-        profile = discord.Embed(title="• Middleman Profile •", color=0x000000)
-        profile.set_thumbnail(url=member.display_avatar.url)
-        profile.add_field(name="Username", value=str(member), inline=True)
-        profile.add_field(name="User ID", value=str(member.id), inline=True)
-        profile.add_field(
-            name="Account Created",
-            value=member.created_at.strftime("%B %d, %Y"),
-            inline=False
-        )
-        profile.add_field(name="Completed Tickets", value=str(completed), inline=False)
-        await ch.send(embed=profile)
-
-        # Save claimer in ticket doc
-        tickets_coll = colls["tickets"]
         await tickets_coll.update_one(
             {"channelId": str(ch.id)},
-            {"$set": {"claimedBy": member.id}},
+            {"$set": {"claimedBy": str(member.id)}},
             upsert=True
         )
+
+        try:
+            await ch.send(f"{member.mention} will be your middleman for this trade.")
+        except Exception:
+            pass
+
+        try:
+            mm_coll = colls["middlemen"]
+            data = await mm_coll.find_one({"_id": member.id})
+            completed = int(data.get("completed", 0)) if data else 0
+        except Exception:
+            completed = 0
+
+        profile = discord.Embed(
+            title="__**• Middleman Profile •**__",
+            color=0x000000
+        )
+        try:
+            profile.set_thumbnail(url=member.display_avatar.url)
+        except Exception:
+            profile.set_thumbnail(url=PLACEHOLDER_AVATAR)
+
+        profile.description = (
+            f"**| Username:** {member.mention} (`{member}`)\n"
+            f"**| User ID:** `{member.id}`\n"
+            f"**| Account Created:** {member.created_at.strftime('%B %d, %Y')}\n"
+            f"**| Completed Tickets:** **{completed}**"
+        )
+
+        try:
+            await ch.send(embed=profile)
+        except Exception:
+            pass
+
+        try:
+            if interaction.message:
+                await interaction.message.edit(view=DeleteTicketView(owner_id=self.owner_id))
+        except Exception:
+            pass
 
     @discord.ui.button(
         label="Delete Ticket",
         style=discord.ButtonStyle.danger,
         emoji="<a:redcrossanimated:1103550228424032277>",
-        custom_id="ticket_delete_immediate"
+        custom_id="delete_ticket_immediate"
     )
-    async def delete_btn(self, interaction: discord.Interaction, _):
-        # Owner or any middleman can delete
+    async def delete_immediate(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
-            if not interaction.response.is_done():
+            try:
                 await interaction.response.defer()
+            except Exception:
+                pass
             await interaction.channel.delete()
         else:
             await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
 
 # ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Counts
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
-    # Avatars
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
-    # Mentions (fallback)
     mention1 = user1.mention if user1 else "Unknown User"
     mention2 = user2.mention if user2 else "`(no user provided)`"
 
-    # User1 embed
     embed1 = discord.Embed(
         title="__**• Trade •**__" if trade_desc else None,
-        description=(
-            f"| **[{count1}] {mention1} side:**\n"
-            f"| **{side1 or '(not provided)'}**"
-        ),
+        description=f"| **[{count1}] {mention1} side:**\n| **{side1 or '(not provided)'}**",
         color=0x000000
     )
     embed1.set_thumbnail(url=avatar1)
 
-    # User2 embed
     embed2 = discord.Embed(
-        description=(
-            f"\u200b| **[{count2}] {mention2} side:**\n"
-            f"| **{side2 or '(not provided)'}**"
-        ),
+        description=f"\u200b| **[{count2}] {mention2} side:**\n| **{side2 or '(not provided)'}**",
         color=0x000000
     )
     embed2.set_thumbnail(url=avatar2)
 
-    # Send with Claim + Delete on the same message
     await ticket_channel.send(
         content=(
             f"**{mention1}** has created a ticket with **{mention2}**.\n"
@@ -196,11 +214,24 @@ class ClosePanel(View):
     @discord.ui.button(label="DELETE", style=discord.ButtonStyle.danger, custom_id="ticket_delete")
     async def delete_btn(self, interaction: discord.Interaction, _):
         try:
+            allowed = (
+                any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles)
+                or interaction.user.guild_permissions.administrator
+            )
+            if not allowed:
+                return await interaction.response.send_message(
+                    "❌ You don't have permission to delete this ticket.", ephemeral=True
+                )
+
             if not interaction.response.is_done():
                 await interaction.response.defer()
             await interaction.channel.delete()
         except Exception as e:
             print("Delete Button Error:", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
     @discord.ui.button(label="LOG POINTS", style=discord.ButtonStyle.success, custom_id="ticket_log_points")
     async def log_points_btn(self, interaction: discord.Interaction, _):
@@ -209,10 +240,6 @@ class ClosePanel(View):
                 await interaction.response.defer(ephemeral=True)
 
             channel = interaction.channel
-            guild = interaction.guild
-            if not isinstance(channel, discord.TextChannel) or getattr(channel, "category_id", None) != TICKET_CATEGORY_ID:
-                return await interaction.followup.send("❌ This button can only be used inside ticket channels.", ephemeral=True)
-
             colls = await collections()
             tickets_coll = colls["tickets"]
             points_coll = colls["clientPoints"]
@@ -228,38 +255,35 @@ class ClosePanel(View):
             for uid in user_ids:
                 await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
 
-            lb_channel = guild.get_channel(LB_CHANNEL_ID)
-            if not lb_channel:
-                return await interaction.followup.send("❌ Leaderboard channel not found.", ephemeral=True)
+            # Update leaderboard
+            lb_channel = interaction.guild.get_channel(LB_CHANNEL_ID)
+            if lb_channel:
+                try:
+                    lb_message = await lb_channel.fetch_message(LB_MESSAGE_ID)
+                except Exception:
+                    embed = discord.Embed(
+                        title="🏆 Top Clients This Month",
+                        description="No data yet.",
+                        color=0x2B2D31,
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_footer(text="Client Leaderboard")
+                    lb_message = await lb_channel.send(embed=embed)
 
-            # Ensure leaderboard message exists, else create one
-            lb_message = None
-            try:
-                lb_message = await lb_channel.fetch_message(LB_MESSAGE_ID)
-            except Exception:
+                top_users = await points_coll.find().sort("points", -1).limit(10).to_list(length=10)
+                leaderboard_text = "\n".join(
+                    f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                    for i, user in enumerate(top_users)
+                ) or "No data yet."
+
                 embed = discord.Embed(
                     title="🏆 Top Clients This Month",
-                    description="No data yet.",
+                    description=leaderboard_text,
                     color=0x2B2D31,
                     timestamp=datetime.utcnow()
                 )
                 embed.set_footer(text="Client Leaderboard")
-                lb_message = await lb_channel.send(embed=embed)
-
-            top_users = await points_coll.find().sort("points", -1).limit(10).to_list(length=10)
-            leaderboard_text = "\n".join(
-                f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
-                for i, user in enumerate(top_users)
-            ) or "No data yet."
-
-            embed = discord.Embed(
-                title="🏆 Top Clients This Month",
-                description=leaderboard_text,
-                color=0x2B2D31,
-                timestamp=datetime.utcnow()
-            )
-            embed.set_footer(text="Client Leaderboard")
-            await lb_message.edit(embed=embed)
+                await lb_message.edit(embed=embed)
 
             await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
         except Exception as e:
@@ -295,7 +319,6 @@ class TicketPanelView(View):
 
                     q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
 
-                    # Fetch target member reliably
                     target_member = None
                     if q4v and re.fullmatch(r"\d{17,19}", q4v):
                         try:
@@ -303,7 +326,6 @@ class TicketPanelView(View):
                         except Exception:
                             target_member = None
 
-                    # Permission overwrites
                     overwrites = {
                         modal_interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         modal_interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -329,7 +351,6 @@ class TicketPanelView(View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
-                    # Pure embed version (two avatars on the right)
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
 
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
@@ -354,18 +375,18 @@ class Tickets(commands.Cog):
                 "To request a middleman from this server\n"
                 "click the `Request Middleman` button below.\n\n"
                 "**How does a Middleman Work?**\n"
-                "1. Seller gives item to middleman.\n"
-                "2. Buyer pays seller (after MM confirms).\n"
-                "3. Middleman delivers item to buyer.\n\n"
+                "Example: Trade is Harvester (MM2) for Robux.\n"
+                "1. Seller gives Harvester to middleman.\n"
+                "2. Buyer pays seller robux (after middleman confirms receiving mm2).\n"
+                "3. Middleman gives buyer Harvester (after seller received robux).\n\n"
                 "**Important**\n"
-                "• Troll tickets are not allowed.\n"
-                "• You must vouch your MM afterwards.\n"
+                "• Troll tickets are not allowed. Once the trade is completed you must vouch your middleman in their respective servers.\n"
+                "• If you have trouble getting a user's ID click [here](https://youtube.com/shorts/pMG8CuIADDs?feature=shared).\n"
                 f"• Make sure to read <#{TICKET_CATEGORY_ID}> before making a ticket."
             ),
             color=EMBED_COLOR
         )
 
-        # Replace old panel if it exists
         existing = None
         async for msg in target.history(limit=50):
             if msg.author.id == ctx.bot.user.id and msg.embeds:
@@ -383,8 +404,17 @@ class Tickets(commands.Cog):
     @commands.command(name="close")
     async def close_ticket(self, ctx: commands.Context):
         ch = ctx.channel
-        if not isinstance(ch, discord.TextChannel) or (ch.category_id != TICKET_CATEGORY_ID):
+        cat_id = getattr(ch.category, "id", None)
+
+        if not isinstance(ch, discord.TextChannel) or cat_id != TICKET_CATEGORY_ID:
             return await ctx.reply("❌ You can only close ticket channels!", mention_author=False)
+
+        allowed = (
+            any(r.id == MIDDLEMAN_ROLE_ID for r in ctx.author.roles)
+            or ctx.author.guild_permissions.administrator
+        )
+        if not allowed:
+            return await ctx.reply("❌ You don't have permission to close this ticket.", mention_author=False)
 
         colls = await collections()
         tickets_coll = colls["tickets"]
@@ -392,16 +422,23 @@ class Tickets(commands.Cog):
 
         ticket_data = await tickets_coll.find_one({"channelId": str(ch.id)})
         claimed_by = ticket_data.get("claimedBy") if ticket_data else None
+
         if claimed_by:
-            await mm_coll.update_one({"_id": claimed_by}, {"$inc": {"completed": 1}}, upsert=True)
+            try:
+                mm_id_for_db = int(claimed_by)
+            except Exception:
+                mm_id_for_db = claimed_by
+            await mm_coll.update_one({"_id": mm_id_for_db}, {"$inc": {"completed": 1}}, upsert=True)
 
         embed = discord.Embed(
             title="🔒 Ticket Closed",
-            description="Select an option below to generate the transcript or delete the ticket.",
+            description="Select an option below to generate the transcript, log points, or delete the ticket.",
             color=0x2B2D31
         )
         embed.add_field(name="Ticket Name", value=ch.name, inline=True)
-        embed.set_footer(text=f"Closed by {ctx.author}")
+        embed.add_field(name="Closed By", value=ctx.author.mention, inline=True)
+        embed.set_footer(text="Ticket Panel")
+
         await ctx.send(embed=embed, view=ClosePanel())
 
 # -------------------------
