@@ -9,7 +9,25 @@ from utils.constants import (
 )
 from utils.db import collections
 
-# ------------------------- Delete Button -------------------------
+# ------------------------- Helpers -------------------------
+PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
+
+def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
+    """Return a static PNG avatar URL (works for animated avatars too)."""
+    try:
+        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
+    except Exception:
+        try:
+            return user.display_avatar.with_static_format("png").url
+        except Exception:
+            return user.display_avatar.url
+
+async def _count_user_tickets(uid: int) -> int:
+    colls = await collections()
+    tickets_coll = colls["tickets"]
+    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+
+# ------------------------- Legacy Delete View (kept for compatibility) -------------------------
 class DeleteTicketView(View):
     def __init__(self, owner_id: int):
         super().__init__(timeout=None)
@@ -30,28 +48,86 @@ class DeleteTicketView(View):
                 ephemeral=True
             )
 
-# ------------------------- Helpers -------------------------
-PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
+# ------------------------- Claim + Delete (on the first message) -------------------------
+class ClaimAndDeleteView(View):
+    def __init__(self, owner_id: int):
+        super().__init__(timeout=None)
+        self.owner_id = owner_id
 
-def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
-    """Return a static PNG avatar URL (works for animated avatars too)."""
-    try:
-        return user.display_avatar.replace(size=size, format="png").url  # discord.py 2.3+
-    except Exception:
-        try:
-            return user.display_avatar.with_static_format("png").url     # backwards compat
-        except Exception:
-            return user.display_avatar.url
+        @discord.ui.button(label="🔐 Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim")
+    async def claim_btn(self, interaction: discord.Interaction, _):
+        guild = interaction.guild
+        member = interaction.user
 
-async def _count_user_tickets(uid: int) -> int:
-    colls = await collections()
-    tickets_coll = colls["tickets"]
-    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+        # Only middlemen can claim
+        if not any(r.id == MIDDLEMAN_ROLE_ID for r in member.roles):
+            return await interaction.response.send_message("❌ Only middlemen can claim tickets.", ephemeral=True)
 
+        ch = interaction.channel
 
+        # Lock channel for MM role, allow the claimer to speak
+        overwrites = ch.overwrites.copy()
+        mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
+        if mm_role:
+            current = overwrites.get(mm_role, discord.PermissionOverwrite())
+            current.view_channel = True
+            current.send_messages = False
+            overwrites[mm_role] = current
 
+        current_claimer = overwrites.get(member, discord.PermissionOverwrite())
+        current_claimer.view_channel = True
+        current_claimer.send_messages = True
+        overwrites[member] = current_claimer
+
+        await ch.edit(overwrites=overwrites, name=f"ticket-{member.name}")
+
+        # Say (not embed), then profile card
+        await interaction.response.send_message(f"{member.mention} will be your middleman for this trade.")
+
+        # Profile card
+        colls = await collections()
+        mm_coll = colls["middlemen"]
+        data = await mm_coll.find_one({"_id": member.id})
+        completed = int(data["completed"]) if data and "completed" in data else 0
+
+        profile = discord.Embed(title="• Middleman Profile •", color=0x000000)
+        profile.set_thumbnail(url=member.display_avatar.url)
+        profile.add_field(name="Username", value=str(member), inline=True)
+        profile.add_field(name="User ID", value=str(member.id), inline=True)
+        profile.add_field(
+            name="Account Created",
+            value=member.created_at.strftime("%B %d, %Y"),
+            inline=False
+        )
+        profile.add_field(name="Completed Tickets", value=str(completed), inline=False)
+        await ch.send(embed=profile)
+
+        # Save claimer in ticket doc
+        tickets_coll = colls["tickets"]
+        await tickets_coll.update_one(
+            {"channelId": str(ch.id)},
+            {"$set": {"claimedBy": member.id}},
+            upsert=True
+        )
+
+    @discord.ui.button(
+        label="Delete Ticket",
+        style=discord.ButtonStyle.danger,
+        emoji="<a:redcrossanimated:1103550228424032277>",
+        custom_id="ticket_delete_immediate"
+    )
+    async def delete_btn(self, interaction: discord.Interaction, _):
+        # Owner or any middleman can delete
+        if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+            await interaction.channel.delete()
+        else:
+            await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
+
+# ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    # Count tickets
+    # Counts
     count1 = await _count_user_tickets(user1.id)
     count2 = await _count_user_tickets(user2.id) if user2 else 0
 
@@ -59,7 +135,7 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
-    # Mentions (fallback if user2 is None)
+    # Mentions (fallback)
     mention1 = user1.mention if user1 else "Unknown User"
     mention2 = user2.mention if user2 else "`(no user provided)`"
 
@@ -74,7 +150,7 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     )
     embed1.set_thumbnail(url=avatar1)
 
-    # User2 embed (shrunk)
+    # User2 embed
     embed2 = discord.Embed(
         description=(
             f"\u200b| **[{count2}] {mention2} side:**\n"
@@ -84,7 +160,7 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     )
     embed2.set_thumbnail(url=avatar2)
 
-    # Send both embeds together
+    # Send with Claim + Delete on the same message
     await ticket_channel.send(
         content=(
             f"**{mention1}** has created a ticket with **{mention2}**.\n"
@@ -92,8 +168,9 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
             f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
         ),
         embeds=[embed1, embed2],
-        view=DeleteTicketView(owner_id=user1.id)
+        view=ClaimAndDeleteView(owner_id=user1.id)
     )
+
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
@@ -155,6 +232,7 @@ class ClosePanel(View):
             if not lb_channel:
                 return await interaction.followup.send("❌ Leaderboard channel not found.", ephemeral=True)
 
+            # Ensure leaderboard message exists, else create one
             lb_message = None
             try:
                 lb_message = await lb_channel.fetch_message(LB_MESSAGE_ID)
@@ -217,7 +295,7 @@ class TicketPanelView(View):
 
                     q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
 
-                    # Fetch target member reliably (uses API if not cached)
+                    # Fetch target member reliably
                     target_member = None
                     if q4v and re.fullmatch(r"\d{17,19}", q4v):
                         try:
@@ -251,7 +329,7 @@ class TicketPanelView(View):
                         "user2": str(target_member.id) if target_member else None
                     })
 
-                    # >>> PURE EMBED VERSION (no canvas), avatars clickable on the right
+                    # Pure embed version (two avatars on the right)
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
 
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
@@ -276,19 +354,31 @@ class Tickets(commands.Cog):
                 "To request a middleman from this server\n"
                 "click the `Request Middleman` button below.\n\n"
                 "**How does a Middleman Work?**\n"
-                "Example: Trade is Harvester (MM2) for Robux.\n"
-                "1. Seller gives Harvester to middleman.\n"
-                "2. Buyer pays seller robux (after middleman confirms receiving mm2).\n"
-                "3. Middleman gives buyer Harvester (after seller received robux).\n\n"
+                "1. Seller gives item to middleman.\n"
+                "2. Buyer pays seller (after MM confirms).\n"
+                "3. Middleman delivers item to buyer.\n\n"
                 "**Important**\n"
-                "• Troll tickets are not allowed. Once the trade is completed you must vouch your middleman in their respective servers.\n"
-                "• If you have trouble getting a user's ID click [here](https://youtube.com/shorts/pMG8CuIADDs?feature=shared).\n"
+                "• Troll tickets are not allowed.\n"
+                "• You must vouch your MM afterwards.\n"
                 f"• Make sure to read <#{TICKET_CATEGORY_ID}> before making a ticket."
             ),
             color=EMBED_COLOR
         )
-        await target.send(embed=embed, view=TicketPanelView())
-        await ctx.reply("✅ Setup complete.", mention_author=False)
+
+        # Replace old panel if it exists
+        existing = None
+        async for msg in target.history(limit=50):
+            if msg.author.id == ctx.bot.user.id and msg.embeds:
+                if msg.embeds[0].title == "Azan's Middleman Service":
+                    existing = msg
+                    break
+
+        if existing:
+            await existing.edit(embed=embed, view=TicketPanelView())
+            await ctx.reply("🔁 Setup panel updated.", mention_author=False)
+        else:
+            await target.send(embed=embed, view=TicketPanelView())
+            await ctx.reply("✅ Setup complete.", mention_author=False)
 
     @commands.command(name="close")
     async def close_ticket(self, ctx: commands.Context):
@@ -296,15 +386,14 @@ class Tickets(commands.Cog):
         if not isinstance(ch, discord.TextChannel) or (ch.category_id != TICKET_CATEGORY_ID):
             return await ctx.reply("❌ You can only close ticket channels!", mention_author=False)
 
-        ticket_owner_id = None
-        for target, overwrite in ch.overwrites.items():
-            if isinstance(target, discord.Member) and target.id not in {ctx.guild.id, MIDDLEMAN_ROLE_ID, OWNER_ID}:
-                if overwrite.view_channel:
-                    ticket_owner_id = target.id
-                    try:
-                        await ch.set_permissions(target, send_messages=False, view_channel=False)
-                    except:
-                        pass
+        colls = await collections()
+        tickets_coll = colls["tickets"]
+        mm_coll = colls["middlemen"]
+
+        ticket_data = await tickets_coll.find_one({"channelId": str(ch.id)})
+        claimed_by = ticket_data.get("claimedBy") if ticket_data else None
+        if claimed_by:
+            await mm_coll.update_one({"_id": claimed_by}, {"$inc": {"completed": 1}}, upsert=True)
 
         embed = discord.Embed(
             title="🔒 Ticket Closed",
@@ -312,7 +401,6 @@ class Tickets(commands.Cog):
             color=0x2B2D31
         )
         embed.add_field(name="Ticket Name", value=ch.name, inline=True)
-        embed.add_field(name="Owner", value=f"<@{ticket_owner_id}>" if ticket_owner_id else "Unknown", inline=True)
         embed.set_footer(text=f"Closed by {ctx.author}")
         await ctx.send(embed=embed, view=ClosePanel())
 
