@@ -59,12 +59,16 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
+    # Mentions (fallback if user2 is None)
+    mention1 = user1.mention if user1 else "Unknown User"
+    mention2 = user2.mention if user2 else "`(no user provided)`"
+
     # User1 embed
     embed1 = discord.Embed(
         title="__**• Trade •**__" if trade_desc else None,
         description=(
-            f"| **[{count1}] {user1.mention} side:**\n"
-            f"| **{side1}**"
+            f"| **[{count1}] {mention1} side:**\n"
+            f"| **{side1 or '(not provided)'}**"
         ),
         color=0x000000
     )
@@ -73,8 +77,8 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
     # User2 embed (shrunk)
     embed2 = discord.Embed(
         description=(
-            f"\u200b| **[{count2}] {user2.mention} side:**\n"
-            f"| **{side2}**"
+            f"\u200b| **[{count2}] {mention2} side:**\n"
+            f"| **{side2 or '(not provided)'}**"
         ),
         color=0x000000
     )
@@ -82,14 +86,14 @@ async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_des
 
     # Send both embeds together
     await ticket_channel.send(
-    content=(
-        f"**{user1.mention}** has created a ticket with **{user2.mention}**.\n"
-        "A middleman will be with you shortly.\n"
-        f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
-    ),
-    embeds=[embed1, embed2],
-    view=DeleteTicketView(owner_id=user1.id)
-)
+        content=(
+            f"**{mention1}** has created a ticket with **{mention2}**.\n"
+            "A middleman will be with you shortly.\n"
+            f"||<@&{MIDDLEMAN_ROLE_ID}> <@{OWNER_ID}>||"
+        ),
+        embeds=[embed1, embed2],
+        view=DeleteTicketView(owner_id=user1.id)
+    )
 # ------------------------- Close Panel -------------------------
 class ClosePanel(View):
     def __init__(self):
