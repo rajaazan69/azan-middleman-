@@ -294,6 +294,8 @@ class ClosePanel(View):
                 await interaction.followup.send(f"❌ Something went wrong: {e}", ephemeral=True)
 
 # ------------------------- Ticket Panel & Modal -------------------------
+MM_BANNED_ROLE_ID = 1395343230832349194  # 🔒 MM Banned role
+
 class TicketPanelView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -307,7 +309,23 @@ class TicketPanelView(View):
             q4 = TextInput(label="Their Discord ID?", required=False, max_length=20)
 
             async def on_submit(self, modal_interaction: discord.Interaction):
+
+                # 🔒 MM BANNED CHECK HERE (before deferring)
+                if any(r.id == MM_BANNED_ROLE_ID for r in modal_interaction.user.roles):
+                    embed = discord.Embed(
+                        title="❌ Unable to Create Ticket",
+                        description=(
+                            "You are currently **MM Banned** and cannot create tickets.\n\n"
+                            "**Reason:** `Middleman Ban`\n"
+                            "Please ping an **admin** to resolve this."
+                        ),
+                        color=EMBED_COLOR
+                    )
+                    return await modal_interaction.response.send_message(embed=embed, ephemeral=True)
+
+                # ✅ Passed MM Ban check
                 await modal_interaction.response.defer(ephemeral=True)
+
                 try:
                     colls = await collections()
                     cat = modal_interaction.guild.get_channel(TICKET_CATEGORY_ID)
@@ -315,7 +333,9 @@ class TicketPanelView(View):
                         for ch in cat.channels:
                             ow = ch.overwrites_for(modal_interaction.user)
                             if ow.view_channel:
-                                return await modal_interaction.followup.send(f"❌ You already have an open ticket: {ch.mention}", ephemeral=True)
+                                return await modal_interaction.followup.send(
+                                    f"❌ You already have an open ticket: {ch.mention}", ephemeral=True
+                                )
 
                     q1v, q2v, q3v, q4v = str(self.q1), str(self.q2), str(self.q3), str(self.q4)
 
@@ -359,7 +379,6 @@ class TicketPanelView(View):
                     await modal_interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
         await interaction.response.send_modal(TicketModal())
-
 # ------------------------- Main Cog -------------------------
 class Tickets(commands.Cog):
     def __init__(self, bot):
