@@ -47,8 +47,16 @@ async def load_cogs():
 
     await bot.load_extension("cogs.welcome")
     print("[✅] Loaded cog: cogs.welcome")
-
-
+    
+    await bot.load_extension("cogs.s")
+    print("[✅] Loaded cog: cogs.s")
+    
+    await bot.load_extension("cogs.a")
+    print("[✅] Loaded cog: cogs.a")
+    
+    await bot.load_extension("cogs.vouch")
+    print("[✅] Loaded cog: cogs.vouch")
+    
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
