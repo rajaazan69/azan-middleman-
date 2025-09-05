@@ -14,19 +14,41 @@ intents.members = True
 intents.guilds = True
 
 bot = commands.Bot(command_prefix="$", intents=intents)
+bot.remove_command("help")
 
 # -------- Load Cogs --------
 async def load_cogs():
     await bot.load_extension("cogs.tickets")
+    print("[✅] Loaded cog: cogs.tickets")
+
     await bot.load_extension("cogs.transcripts")
+    print("[✅] Loaded cog: cogs.transcripts")
+
     await bot.load_extension("cogs.tags")
+    print("[✅] Loaded cog: cogs.tags")
+
     await bot.load_extension("cogs.sticky")
+    print("[✅] Loaded cog: cogs.sticky")
+
     await bot.load_extension("cogs.servers")
+    print("[✅] Loaded cog: cogs.servers")
+
     await bot.load_extension("cogs.moderation")
+    print("[✅] Loaded cog: cogs.moderation")
+
     await bot.load_extension("cogs.ticket_commands")
+    print("[✅] Loaded cog: cogs.ticket_commands")
+
     await bot.load_extension("cogs.roblox")
+    print("[✅] Loaded cog: cogs.roblox")
+
     await bot.load_extension("cogs.Ticketpoints")
+    print("[✅] Loaded cog: cogs.Ticketpoints")
+
     await bot.load_extension("cogs.welcome")
+    print("[✅] Loaded cog: cogs.welcome")
+
+
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
