@@ -8,6 +8,7 @@ from utils.constants import (
     LB_CHANNEL_ID, LB_MESSAGE_ID
 )
 from utils.db import collections
+from .crypto_buttons import CryptoButtonView
 
 # ------------------------- Helpers -------------------------
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
@@ -227,6 +228,17 @@ class ClaimView(discord.ui.View):
         row.add_item(discord.ui.Button(label="Profile Link", style=discord.ButtonStyle.link, url=profile_link))
 
         await interaction.response.send_message(embed=embed, view=row)
+            # LTC button
+    @discord.ui.button(label="LTC", style=discord.ButtonStyle.primary, emoji="<:emoji_27:1413667063951659038>", custom_id="ticket_ltc")
+    async def ltc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = CryptoButtonView(mm_id=self.member_id)
+        await view.ltc_button(interaction, button)
+
+    # ETH button
+    @discord.ui.button(label="ETH", style=discord.ButtonStyle.primary, emoji="<:emoji_26:1413666923756912640>", custom_id="ticket_eth")
+    async def eth_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = CryptoButtonView(mm_id=self.member_id)
+        await view.eth_button(interaction, button)
 # ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     count1 = await _count_user_tickets(user1.id)
