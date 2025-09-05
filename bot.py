@@ -60,6 +60,8 @@ async def load_cogs():
     await bot.load_extension("cogs.help")
     print("[✅] Loaded cog: cogs.vouch")
     
+    await bot.load_extension("cogs.crypto")
+    print("[✅] Loaded cog: cogs.crypto")
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
