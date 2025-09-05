@@ -129,7 +129,7 @@ class ClaimAndDeleteView(View):
         )
 
         try:
-            await ch.send(embed=profile)
+            await ch.send(embed=profile, view=ClaimView(member.id))
         except Exception:
             pass
 
@@ -139,22 +139,94 @@ class ClaimAndDeleteView(View):
         except Exception:
             pass
 
-    @discord.ui.button(
-        label="Delete Ticket",
-        style=discord.ButtonStyle.danger,
-        emoji="<a:redcrossanimated:1103550228424032277>",
-        custom_id="delete_ticket_immediate"
-    )
-    async def delete_immediate(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id == self.owner_id or any(r.id == MIDDLEMAN_ROLE_ID for r in interaction.user.roles):
-            try:
-                await interaction.response.defer()
-            except Exception:
-                pass
-            await interaction.channel.delete()
-        else:
-            await interaction.response.send_message("❌ You don't have permission to delete this ticket.", ephemeral=True)
+# ------------------------- Claim View (W Button) -------------------------
+class ClaimView(discord.ui.View):
+    def __init__(self, member_id):
+        super().__init__(timeout=None)
+        self.member_id = member_id
 
+    @discord.ui.button(label="w", style=discord.ButtonStyle.secondary, custom_id="ticket_w")
+    async def w_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        allowed_role_id = 1373029428409405500
+        has_role = any(r.id == allowed_role_id for r in interaction.user.roles)
+        is_admin = interaction.user.guild_permissions.administrator
+        
+        if not (has_role or is_admin):
+            return await interaction.response.send_message(
+            "❌ You don’t have permission to use this button.",
+            ephemeral=True
+        )
+        ch = interaction.channel
+
+        # get the DB collection
+        colls = await collections()
+        users_coll = colls["tags"]
+        tickets_coll = colls["tickets"]
+
+        # fetch the ticket and middleman ID
+        ticket_doc = await tickets_coll.find_one({"channelId": str(ch.id)})
+        mm_id = ticket_doc.get("claimedBy") if ticket_doc else None
+
+        if not mm_id:
+            return await interaction.response.send_message("❌ Could not find the middleman for this ticket.", ephemeral=True)
+
+        # find the saved Roblox user for the middleman
+        user_doc = await users_coll.find_one({"_id": str(mm_id)})
+        if not user_doc:
+            return await interaction.response.send_message("❌ No Roblox user saved for this middleman.", ephemeral=True)
+
+        query = user_doc.get("robloxUser")
+        if not query:
+            return await interaction.response.send_message("❌ No Roblox username found for this middleman.", ephemeral=True)
+
+        # fetch roblox info (same logic as $a)
+        import aiohttp
+        roblox_data = None
+        thumb_url = "https://www.roblox.com/images/logo/roblox_logo_300x300.png"
+
+        async with aiohttp.ClientSession() as session:
+            if not query.isdigit():
+                async with session.post(
+                    "https://users.roblox.com/v1/usernames/users",
+                    json={"usernames": [query], "excludeBannedUsers": False}
+                ) as resp:
+                    data = await resp.json()
+                    if data["data"]:
+                        roblox_id = data["data"][0]["id"]
+                    else:
+                        return await interaction.response.send_message(f"❌ Could not find Roblox user `{query}`.", ephemeral=True)
+            else:
+                roblox_id = int(query)
+
+            async with session.get(f"https://users.roblox.com/v1/users/{roblox_id}") as resp:
+                roblox_data = await resp.json()
+
+            async with session.get(
+                f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={roblox_id}&size=150x150&format=Png&isCircular=false"
+            ) as resp:
+                thumb_data = await resp.json()
+                if thumb_data["data"]:
+                    thumb_url = thumb_data["data"][0]["imageUrl"]
+
+        profile_link = f"https://www.roblox.com/users/{roblox_id}/profile"
+
+        embed = discord.Embed(
+            color=0x000000 if not roblox_data.get("isBanned") else 0xFF0000
+        )
+        embed.set_author(name=roblox_data["name"], icon_url=thumb_url, url=profile_link)
+        embed.set_thumbnail(url=thumb_url)
+        embed.add_field(name="Display Name", value=f"`{roblox_data['displayName']}`")
+        embed.add_field(name="ID", value=f"`{roblox_data['id']}`")
+        embed.add_field(name="Created", value=roblox_data["created"])
+        if roblox_data.get("description"):
+            embed.add_field(name="Description", value=roblox_data["description"][:1020], inline=False)
+        if roblox_data.get("isBanned"):
+            embed.add_field(name="Status", value="BANNED")
+
+        row = discord.ui.View()
+        row.add_item(discord.ui.Button(label="Profile Link", style=discord.ButtonStyle.link, url=profile_link))
+
+        await interaction.response.send_message(embed=embed, view=row)
 # ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     count1 = await _count_user_tickets(user1.id)
