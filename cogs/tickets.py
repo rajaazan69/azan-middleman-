@@ -255,6 +255,14 @@ class ClaimView(discord.ui.View):
 
     # ---------------- LTC Button ----------------
     async def ltc_callback(self, interaction: discord.Interaction):
+        allowed_role_id = 1373029428409405500
+        has_role = any(r.id == allowed_role_id for r in interaction.user.roles)
+        is_admin = interaction.user.guild_permissions.administrator
+
+        if not (has_role or is_admin):
+            return await interaction.response.send_message(
+                "❌ You don’t have permission to use this button.", ephemeral=True
+            )
         address = get_crypto_address(str(self.member_id), "LTC")
         if not address:
             return await interaction.response.send_message("❌ No LTC address saved for this middleman.", ephemeral=True)
@@ -269,6 +277,14 @@ class ClaimView(discord.ui.View):
 
     # ---------------- ETH Button ----------------
     async def eth_callback(self, interaction: discord.Interaction):
+        allowed_role_id = 1373029428409405500
+        has_role = any(r.id == allowed_role_id for r in interaction.user.roles)
+        is_admin = interaction.user.guild_permissions.administrator
+
+        if not (has_role or is_admin):
+            return await interaction.response.send_message(
+                "❌ You don’t have permission to use this button.", ephemeral=True
+            )
         address = get_crypto_address(str(self.member_id), "ETH")
         if not address:
             return await interaction.response.send_message("❌ No ETH address saved for this middleman.", ephemeral=True)
