@@ -141,46 +141,69 @@ class ClaimAndDeleteView(View):
             pass
 
 # ------------------------- Claim View (W Button) -------------------------
+import discord
+from utils.db import collections
+from .crypto_buttons import get_crypto_address  # Use your crypto function directly
+
 class ClaimView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
 
-    @discord.ui.button(label="w", style=discord.ButtonStyle.secondary, custom_id="ticket_w")
-    async def w_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # --- W Button ---
+        w_btn = discord.ui.Button(label="w", style=discord.ButtonStyle.secondary, custom_id="ticket_w")
+        w_btn.callback = self.w_button_callback
+        self.add_item(w_btn)
+
+        # --- LTC Button ---
+        ltc_btn = discord.ui.Button(label="LTC", style=discord.ButtonStyle.primary,
+                                    emoji="<:emoji_27:1413667063951659038>", custom_id="ticket_ltc")
+        ltc_btn.callback = self.ltc_callback
+        self.add_item(ltc_btn)
+
+        # --- ETH Button ---
+        eth_btn = discord.ui.Button(label="ETH", style=discord.ButtonStyle.primary,
+                                    emoji="<:emoji_26:1413666923756912640>", custom_id="ticket_eth")
+        eth_btn.callback = self.eth_callback
+        self.add_item(eth_btn)
+
+    # ---------------- W Button ----------------
+    async def w_button_callback(self, interaction: discord.Interaction):
         allowed_role_id = 1373029428409405500
         has_role = any(r.id == allowed_role_id for r in interaction.user.roles)
         is_admin = interaction.user.guild_permissions.administrator
-        
+
         if not (has_role or is_admin):
             return await interaction.response.send_message(
-            "❌ You don’t have permission to use this button.",
-            ephemeral=True
-        )
+                "❌ You don’t have permission to use this button.", ephemeral=True
+            )
+
         ch = interaction.channel
 
-        # get the DB collection
         colls = await collections()
         users_coll = colls["tags"]
         tickets_coll = colls["tickets"]
 
-        # fetch the ticket and middleman ID
         ticket_doc = await tickets_coll.find_one({"channelId": str(ch.id)})
         mm_id = ticket_doc.get("claimedBy") if ticket_doc else None
 
         if not mm_id:
-            return await interaction.response.send_message("❌ Could not find the middleman for this ticket.", ephemeral=True)
+            return await interaction.response.send_message(
+                "❌ Could not find the middleman for this ticket.", ephemeral=True
+            )
 
-        # find the saved Roblox user for the middleman
         user_doc = await users_coll.find_one({"_id": str(mm_id)})
         if not user_doc:
-            return await interaction.response.send_message("❌ No Roblox user saved for this middleman.", ephemeral=True)
+            return await interaction.response.send_message(
+                "❌ No Roblox user saved for this middleman.", ephemeral=True
+            )
 
         query = user_doc.get("robloxUser")
         if not query:
-            return await interaction.response.send_message("❌ No Roblox username found for this middleman.", ephemeral=True)
+            return await interaction.response.send_message(
+                "❌ No Roblox username found for this middleman.", ephemeral=True
+            )
 
-        # fetch roblox info (same logic as $a)
         import aiohttp
         roblox_data = None
         thumb_url = "https://www.roblox.com/images/logo/roblox_logo_300x300.png"
@@ -195,7 +218,9 @@ class ClaimView(discord.ui.View):
                     if data["data"]:
                         roblox_id = data["data"][0]["id"]
                     else:
-                        return await interaction.response.send_message(f"❌ Could not find Roblox user `{query}`.", ephemeral=True)
+                        return await interaction.response.send_message(
+                            f"❌ Could not find Roblox user `{query}`.", ephemeral=True
+                        )
             else:
                 roblox_id = int(query)
 
@@ -226,19 +251,35 @@ class ClaimView(discord.ui.View):
 
         row = discord.ui.View()
         row.add_item(discord.ui.Button(label="Profile Link", style=discord.ButtonStyle.link, url=profile_link))
-
         await interaction.response.send_message(embed=embed, view=row)
-            # LTC button
-    @discord.ui.button(label="LTC", style=discord.ButtonStyle.primary, emoji="<:emoji_27:1413667063951659038>", custom_id="ticket_ltc")
-    async def ltc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = CryptoButtonView(mm_id=self.member_id)
-        await view.ltc_button(interaction, button)
 
-    # ETH button
-    @discord.ui.button(label="ETH", style=discord.ButtonStyle.primary, emoji="<:emoji_26:1413666923756912640>", custom_id="ticket_eth")
-    async def eth_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = CryptoButtonView(mm_id=self.member_id)
-        await view.eth_button(interaction, button)
+    # ---------------- LTC Button ----------------
+    async def ltc_callback(self, interaction: discord.Interaction):
+        address = get_crypto_address(str(self.member_id), "LTC")
+        if not address:
+            return await interaction.response.send_message("❌ No LTC address saved for this middleman.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="__**• LTC Address •**__",
+            description=f"**Address:**\n`{address}`\n\n**⚠️ Warning:** *Funds sent to the wrong address will be lost!*",
+            color=0x000000
+        )
+        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1373070247795495116/1413678740181094420/IMG_9236.jpg?ex=68bcce6c&is=68bb7cec&hm=7a86021930670dac0b5768c8fac5604a66737ede8319d6a32bb516ec675e5ab6&")
+        await interaction.response.send_message(embed=embed)
+
+    # ---------------- ETH Button ----------------
+    async def eth_callback(self, interaction: discord.Interaction):
+        address = get_crypto_address(str(self.member_id), "ETH")
+        if not address:
+            return await interaction.response.send_message("❌ No ETH address saved for this middleman.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="__**• ETH Address •**__",
+            description=f"**Address:**\n`{address}`\n\n**⚠️ Warning:** *Funds sent to the wrong address will be lost!*",
+            color=0x000000
+        )
+        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1373070247795495116/1413678763711004672/IMG_9237.jpg?ex=68bcce72&is=68bb7cf2&hm=f9cdcc13495c2d778fa8141bc48fef5b538a659617cda2f3f3e2c2074a862ad9&")
+        await interaction.response.send_message(embed=embed)
 # ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
     count1 = await _count_user_tickets(user1.id)
