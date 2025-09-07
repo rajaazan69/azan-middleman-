@@ -38,7 +38,11 @@ class TicketPoints(commands.Cog):
 
         # Add points
         for uid in user_ids:
-            await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
+            await points_coll.update_one(
+            {"userId": uid},
+            {"$inc": {"points": 1}, "$setOnInsert": {"userId": uid}},
+            upsert=True
+        )
 
         # -------------------------------
         # Handle leaderboard
