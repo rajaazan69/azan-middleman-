@@ -379,24 +379,30 @@ class ClosePanel(View):
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
-
+    
             channel = interaction.channel
             colls = await collections()
             tickets_coll = colls["tickets"]
             points_coll = colls["clientPoints"]
-
+    
             ticket_data = await tickets_coll.find_one({"channelId": str(channel.id)})
             if not ticket_data:
                 return await interaction.followup.send("❌ Could not find ticket data.", ephemeral=True)
-
-            user_ids = [uid for uid in [ticket_data.get("user1"), ticket_data.get("user2")] if uid]
+    
+            # ensure user IDs are strings
+            user_ids = [str(uid) for uid in [ticket_data.get("user1"), ticket_data.get("user2")] if uid]
             if not user_ids:
                 return await interaction.followup.send("❌ No users to log points for.", ephemeral=True)
-
+    
+            # increment points (no points in $setOnInsert)
             for uid in user_ids:
-                await points_coll.update_one({"userId": uid}, {"$inc": {"points": 1}}, upsert=True)
-
-            # Update leaderboard
+                await points_coll.update_one(
+                    {"userId": uid},
+                    {"$inc": {"points": 1}, "$setOnInsert": {"userId": uid}},
+                    upsert=True
+                )
+    
+            # Update leaderboard (safe .get usage)
             lb_channel = interaction.guild.get_channel(LB_CHANNEL_ID)
             if lb_channel:
                 try:
@@ -410,13 +416,14 @@ class ClosePanel(View):
                     )
                     embed.set_footer(text="Client Leaderboard")
                     lb_message = await lb_channel.send(embed=embed)
-
+    
                 top_users = await points_coll.find().sort("points", -1).limit(10).to_list(length=10)
                 leaderboard_text = "\n".join(
-                    f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
+                    f"**#{i+1}** <@{user.get('userId')}> — **{user.get('points', 0)}** point{'s' if user.get('points', 0) != 1 else ''}"
                     for i, user in enumerate(top_users)
+                    if user.get("userId")
                 ) or "No data yet."
-
+    
                 embed = discord.Embed(
                     title="🏆 Top Clients This Month",
                     description=leaderboard_text,
@@ -425,15 +432,16 @@ class ClosePanel(View):
                 )
                 embed.set_footer(text="Client Leaderboard")
                 await lb_message.edit(embed=embed)
-
-            await interaction.followup.send(f"✅ Logged 1 point for <@{'>, <@'.join(user_ids)}>.", ephemeral=True)
+    
+            mentions = ", ".join(f"<@{uid}>" for uid in user_ids)
+            await interaction.followup.send(f"✅ Logged 1 point for {mentions}.", ephemeral=True)
+    
         except Exception as e:
             print("Log Points Button Error:", e)
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Something went wrong: {e}", ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ Something went wrong: {e}", ephemeral=True)
-
 # ------------------------- Ticket Panel & Modal -------------------------
 MM_BANNED_ROLE_ID = 1395343230832349194  # 🔒 MM Banned role
 
