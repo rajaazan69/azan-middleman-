@@ -31,3 +31,7 @@ async def sayembed(self, ctx, *, args: str):
 async def sayembed_error(self, ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send(f"❌ {ctx.author.mention}, you don’t have permission to use this command.", delete_after=5)
+        
+# ---------- REQUIRED SETUP ----------
+async def setup(bot):
+    await bot.add_cog(SayEmbed(bot))
