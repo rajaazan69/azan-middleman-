@@ -550,7 +550,7 @@ class Tickets(commands.Cog):
                 "**Important**\n"
                 "• Troll tickets are not allowed. Once the trade is completed you must vouch your middleman in their respective servers.\n"
                 "• If you have trouble getting a user's ID click [here](https://youtube.com/shorts/pMG8CuIADDs?feature=shared).\n"
-                f"• Make sure to read <#{TICKET_CATEGORY_ID}> before making a ticket."
+                f"• Make sure to read <#1414769580949377055> before making a ticket."
             ),
             color=EMBED_COLOR
         )
