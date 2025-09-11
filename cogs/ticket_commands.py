@@ -1,9 +1,20 @@
 import os
 import discord
 from discord.ext import commands
-from utils.constants import TICKET_CATEGORY_ID, OWNER_ID, MIDDLEMAN_ROLE_ID
+from utils.constants import TICKET_CATEGORY_ID, OWNER_ID
 from utils.db import collections
-from datetime import datetime
+
+ALLOWED_ROLE_ID = 1373029428409405500  # special staff role
+
+
+def has_ticket_perms():
+    async def predicate(ctx: commands.Context):
+        if ctx.author.guild_permissions.administrator:
+            return True
+        role = discord.utils.get(ctx.author.roles, id=ALLOWED_ROLE_ID)
+        return role is not None
+    return commands.check(predicate)
+
 
 class TicketCommands(commands.Cog):
     def __init__(self, bot):
@@ -11,6 +22,7 @@ class TicketCommands(commands.Cog):
 
     # ---------- ADD USER ----------
     @commands.command(name="add", help="Adds a user to the current ticket channel.")
+    @has_ticket_perms()
     async def add(self, ctx, member: discord.Member):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
@@ -20,6 +32,7 @@ class TicketCommands(commands.Cog):
 
     # ---------- REMOVE USER ----------
     @commands.command(name="remove", help="Removes a user from the current ticket channel.")
+    @has_ticket_perms()
     async def remove(self, ctx, member: discord.Member):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
@@ -29,6 +42,7 @@ class TicketCommands(commands.Cog):
 
     # ---------- DELETE TICKET ----------
     @commands.command(name="delete", help="Deletes the current ticket channel.")
+    @has_ticket_perms()
     async def delete(self, ctx):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
@@ -40,6 +54,7 @@ class TicketCommands(commands.Cog):
 
     # ---------- RENAME TICKET ----------
     @commands.command(name="rename", help="Renames the current ticket channel.")
+    @has_ticket_perms()
     async def rename(self, ctx, *, new_name: str):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
@@ -51,7 +66,6 @@ class TicketCommands(commands.Cog):
     @commands.command(name="resetlb", help="Resets the client leaderboard.")
     async def resetlb(self, ctx):
         user = ctx.author
-        member = ctx.author
         is_owner = user.id == OWNER_ID
         is_admin = ctx.author.guild_permissions.administrator
         if not is_owner and not is_admin:
@@ -60,7 +74,6 @@ class TicketCommands(commands.Cog):
         colls = await collections()
         await colls['clientPoints'].delete_many({})
 
-        # Update leaderboard message
         try:
             leaderboard_channel = ctx.guild.get_channel(int(os.getenv("LB_CHANNEL_ID")))
             leaderboard_message = await leaderboard_channel.fetch_message(int(os.getenv("LB_MESSAGE_ID")))
@@ -73,12 +86,14 @@ class TicketCommands(commands.Cog):
 
     # ---------- SAY COMMAND ----------
     @commands.command(name="say", help="Make the bot say anything.")
+    @commands.has_permissions(administrator=True)
     async def say(self, ctx, *, message: str):
         await ctx.message.delete()
         await ctx.send(message)
 
     # ---------- OPEN TICKET ----------
     @commands.command(name="open", help="Reopens a closed ticket.")
+    @has_ticket_perms()
     async def open(self, ctx):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
@@ -86,11 +101,11 @@ class TicketCommands(commands.Cog):
         
         overwrites = ch.overwrites
         for target, perms in overwrites.items():
-            # Restore permissions for everyone removed
             if perms.view_channel is False:
                 await ch.set_permissions(target, view_channel=True, send_messages=True)
 
         await ctx.send("✅ Ticket reopened.")
+
 
 async def setup(bot):
     await bot.add_cog(TicketCommands(bot))
