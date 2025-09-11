@@ -91,21 +91,40 @@ class TicketCommands(commands.Cog):
         await ctx.message.delete()
         await ctx.send(message)
 
-    # ---------- OPEN TICKET ----------
+        # ---------- OPEN TICKET ----------
     @commands.command(name="open", help="Reopens a closed ticket.")
     @has_ticket_perms()
     async def open(self, ctx):
         ch = ctx.channel
         if ch.category_id != TICKET_CATEGORY_ID:
             return await ctx.send("❌ You can only open ticket channels.")
+
+        colls = await collections()
+        ticket_data = await colls["tickets"].find_one({"channelId": str(ch.id)})
+
+        if not ticket_data:
+            return await ctx.send("❌ No ticket data found for this ticket.")
+
+        restored = []
+
+        # Restore user1
+        if ticket_data.get("user1"):
+            user1 = ctx.guild.get_member(int(ticket_data["user1"]))
+            if user1:
+                await ch.set_permissions(user1, view_channel=True, send_messages=True)
+                restored.append(user1.mention)
+
+        # Restore user2
+        if ticket_data.get("user2"):
+            user2 = ctx.guild.get_member(int(ticket_data["user2"]))
+            if user2:
+                await ch.set_permissions(user2, view_channel=True, send_messages=True)
+                restored.append(user2.mention)
+
+        if restored:
+            await ctx.send(f"✅ Ticket reopened. Restored access for: {', '.join(restored)}")
+        else:
+            await ctx.send("⚠️ Ticket reopened, but no traders were found in DB.")
         
-        overwrites = ch.overwrites
-        for target, perms in overwrites.items():
-            if perms.view_channel is False:
-                await ch.set_permissions(target, view_channel=True, send_messages=True)
-
-        await ctx.send("✅ Ticket reopened.")
-
-
 async def setup(bot):
     await bot.add_cog(TicketCommands(bot))
