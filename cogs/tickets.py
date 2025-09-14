@@ -452,10 +452,10 @@ class TicketPanelView(View):
     @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="open_ticket")
     async def open_ticket(self, interaction: discord.Interaction, button: Button):
         class TicketModal(Modal, title="Middleman Request"):
-            q1 = TextInput(label="What's the trade?", required=True, max_length=200)
-            q2 = TextInput(label="What's your side?", style=discord.TextStyle.long, required=True, max_length=500)
-            q3 = TextInput(label="What's their side?", style=discord.TextStyle.long, required=True, max_length=500)
-            q4 = TextInput(label="Their Discord ID?", required=False, max_length=20)
+            q1 = TextInput(label="What's the trade?",placeholder="Describe the full trade e.g gag for sab",required=True, max_length=200)
+            q2 = TextInput(label="What's your side?",placeholder="Describe your side e.g gag",style=discord.TextStyle.long, required=True, max_length=500)
+            q3 = TextInput(label="What's their side?",placeholder="Describe the other traders side e.g sab",style=discord.TextStyle.long, required=True, max_length=500)
+            q4 = TextInput(label="Their Discord ID?",placeholder="The other traders user ID",required=False, max_length=20)
 
             async def on_submit(self, modal_interaction: discord.Interaction):
 
