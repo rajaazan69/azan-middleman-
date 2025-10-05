@@ -9,7 +9,7 @@ LB_CHANNEL_ID = int(os.getenv("LB_CHANNEL_ID", "0"))
 LB_MESSAGE_ID = int(os.getenv("LB_MESSAGE_ID", "0"))
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:3000")
-PORT = int(os.getenv("PORT", "3000"))
+PORT = int(os.getenv("PORT", "25267"))
 
 # Design
 EMBED_COLOR = 0x000000
