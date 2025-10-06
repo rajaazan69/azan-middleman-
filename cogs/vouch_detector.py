@@ -26,7 +26,7 @@ class VouchConfirmView(View):
         self.vouch_message_link = vouch_message_link
         self.confirmed = False
 
-    @discord.ui.button(label="✅ Done - Close Ticket", style=discord.ButtonStyle.success, custom_id="vouch_confirm")
+    @discord.ui.button(label="Done - Close Ticket", style=discord.ButtonStyle.success, custom_id="vouch_confirm", emoji="<a:checkmarktick:1337113853393109124>")
     async def confirm_button(self, interaction: discord.Interaction, button: Button):
         is_admin = interaction.user.guild_permissions.administrator
         if interaction.user.id != self.claimed_by and not is_admin:
@@ -130,7 +130,7 @@ class VouchConfirmView(View):
             else:
                 await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, custom_id="vouch_cancel")
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, custom_id="vouch_cancel",emoji="<a:Red_Cross:1380729160141635594>")
     async def cancel_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         await interaction.message.delete()
@@ -180,17 +180,17 @@ class VouchDetector(commands.Cog):
 
             # Send confirmation message for each vouch
             ticket_channel = message.guild.get_channel(ticket_channel_id) or await message.guild.fetch_channel(ticket_channel_id)
-            await ticket_channel.send(f"**{message.author.display_name} has vouched!**")
+            await ticket_channel.send(f"**{message.author.mention} has vouched!**")
 
             # Only send embed once all users have vouched (or single user)
             if all(uid in vouched_set for uid in expected_users):
                 mm_member = message.guild.get_member(mm_id)
                 vouch_text = " | ".join(f"<@{uid}>" for uid in expected_users)
                 embed = discord.Embed(
-                    title="**BOTH USERS HAVE VOUCHED | HOW WOULD YOU LIKE TO PROCEED**",
+                    title="**•__BOTH USERS HAVE VOUCHED | HOW WOULD YOU LIKE TO PROCEED?•__**",
                     description=(
-                        f"**Vouched Users:** | {vouch_text}\n"
-                        f"**Actions:** | Click **Done** to | Generate transcript | Log points | Close ticket"
+                        f"**| Vouched Users:** | {vouch_text}\n"
+                        f"**| Actions:** | Click **Done** to | Generate **Transcript** | Log **Points** | Close **Ticket**"
                     ),
                     color=0x000000,
                     timestamp=message.created_at
