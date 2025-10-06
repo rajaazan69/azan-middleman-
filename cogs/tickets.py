@@ -9,6 +9,7 @@ from utils.constants import (
 )
 from utils.db import collections
 from .crypto_buttons import CryptoButtonView
+from utils.ticket_stats import increment_ticket_count, get_ticket_count
 
 # ------------------------- Helpers -------------------------
 PLACEHOLDER_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png"
@@ -305,9 +306,9 @@ class ClaimView(discord.ui.View):
         await interaction.response.send_message(embed=embed)
 # ------------------------- Trade Embeds -------------------------
 async def send_trade_embed(ticket_channel, user1, user2, side1, side2, trade_desc):
-    count1 = await _count_user_tickets(user1.id)
-    count2 = await _count_user_tickets(user2.id) if user2 else 0
-
+    count1 = get_ticket_count(user1.id)
+    count2 = get_ticket_count(user2.id) if user2 else 0
+    
     avatar1 = _avatar_url(user1) if user1 else PLACEHOLDER_AVATAR
     avatar2 = _avatar_url(user2) if user2 else PLACEHOLDER_AVATAR
 
@@ -531,6 +532,10 @@ class TicketPanelView(View):
                     })
 
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
+                    # Track ticket creation count locally (not in Mongo)
+                    increment_ticket_count(modal_interaction.user.id)
+                    if target_member:
+                        increment_ticket_count(target_member.id)
 
                     await modal_interaction.followup.send(f"✅ Ticket created: {ticket.mention}", ephemeral=True)
 
