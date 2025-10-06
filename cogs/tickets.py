@@ -25,8 +25,15 @@ def _avatar_url(user: discord.abc.User, size: int = 1024) -> str:
 async def _count_user_tickets(uid: int) -> int:
     colls = await collections()
     tickets_coll = colls["tickets"]
-    return await tickets_coll.count_documents({"$or": [{"user1": str(uid)}, {"user2": str(uid)}]})
+    uid_str = str(uid)
 
+    count = await tickets_coll.count_documents({
+        "$or": [
+            {"user1": uid_str},
+            {"user2": uid_str}
+        ]
+    })
+    return count
 # ------------------------- Delete View -------------------------
 class DeleteTicketView(View):
     def __init__(self, owner_id: int):
@@ -514,10 +521,13 @@ class TicketPanelView(View):
                         overwrites=overwrites
                     )
 
-                    await colls["tickets"].insert_one({
+                    tickets_coll = colls["tickets"]
+                    await tickets_coll.insert_one({
+                        "_id": str(ticket.id),
                         "channelId": str(ticket.id),
                         "user1": str(modal_interaction.user.id),
-                        "user2": str(target_member.id) if target_member else None
+                        "user2": str(target_member.id) if target_member else None,
+                        "createdAt": datetime.utcnow()
                     })
 
                     await send_trade_embed(ticket, modal_interaction.user, target_member, q2v, q3v, q1v)
@@ -608,7 +618,17 @@ class Tickets(commands.Cog):
         embed.set_footer(text="Ticket Panel")
 
         await ctx.send(embed=embed, view=ClosePanel())
-
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel):
+        """Auto-clean Mongo when a ticket channel is deleted."""
+        try:
+            colls = await collections()
+            tickets_coll = colls["tickets"]
+            result = await tickets_coll.delete_one({"_id": str(channel.id)})
+            if result.deleted_count > 0:
+                print(f"🧹 [AUTO CLEANUP] Removed ticket entry for deleted channel {channel.id}")
+        except Exception as e:
+            print(f"[AUTO CLEANUP ERROR] {e}")
 # -------------------------
 # Cog setup
 # -------------------------
