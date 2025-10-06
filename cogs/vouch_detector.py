@@ -141,7 +141,7 @@ class VouchConfirmView(View):
 class VouchDetector(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._vouched_users_cache = set()  # Track who already vouched per ticket
+        self._vouched_users_cache = {}  # dict: ticket_channel_id -> set of user IDs who have vouched
 
     def _contains_vouch(self, content: str) -> bool:
         return any(keyword in content.lower() for keyword in VOUCH_KEYWORDS)
@@ -169,46 +169,46 @@ class VouchDetector(commands.Cog):
                 return
 
             ticket_channel_id = int(ticket_data["channelId"])
-            ticket_key = f"{ticket_channel_id}_{message.author.id}"
+            expected_users = [str(ticket_data.get("user1"))]
+            if ticket_data.get("user2"):
+                expected_users.append(str(ticket_data.get("user2")))
 
-            if ticket_key in self._vouched_users_cache:
-                return
-            self._vouched_users_cache.add(ticket_key)
+            # Track vouched users per ticket
+            vouched_set = self._vouched_users_cache.get(ticket_channel_id, set())
+            vouched_set.add(str(message.author.id))
+            self._vouched_users_cache[ticket_channel_id] = vouched_set
 
-            # Check if the author is part of the ticket
-            user_ids = [str(uid) for uid in [ticket_data.get("user1"), ticket_data.get("user2")] if uid]
-            if str(message.author.id) not in user_ids:
-                return
+            # Send confirmation message for each vouch
+            ticket_channel = message.guild.get_channel(ticket_channel_id) or await message.guild.fetch_channel(ticket_channel_id)
+            await ticket_channel.send(f"**{message.author.display_name} has vouched!**")
 
-            # Send vouch notification
-            ticket_channel = message.guild.get_channel(ticket_channel_id)
-            if not ticket_channel:
-                ticket_channel = await message.guild.fetch_channel(ticket_channel_id)
+            # Only send embed once all users have vouched (or single user)
+            if all(uid in vouched_set for uid in expected_users):
+                mm_member = message.guild.get_member(mm_id)
+                vouch_text = " | ".join(f"<@{uid}>" for uid in expected_users)
+                embed = discord.Embed(
+                    title="**BOTH USERS HAVE VOUCHED | HOW WOULD YOU LIKE TO PROCEED**",
+                    description=(
+                        f"**Vouched Users:** | {vouch_text}\n"
+                        f"**Actions:** | Click **Done** to | Generate transcript | Log points | Close ticket"
+                    ),
+                    color=0x000000,
+                    timestamp=message.created_at
+                )
+                embed.set_author(
+                    name=f"{message.author.display_name} | Vouched",
+                    icon_url=message.author.display_avatar.url
+                )
+                if len(expected_users) == 1:
+                    embed.add_field(
+                        name="**Notice**",
+                        value="**No vouch could be detected as no second user exists**",
+                        inline=False
+                    )
+                embed.set_footer(text="Middleman Confirmation | Proceed Carefully")
 
-            vouch_link = message.jump_url
-            vouch_status = f"{message.author.mention} has vouched!"
-            await ticket_channel.send(f"✅ {vouch_status}")
-
-            embed = discord.Embed(
-                title="✅ Vouch Detected!",
-                description=(
-                    f"A vouch was detected from {message.author.mention}!\n\n"
-                    f"**Vouch Message:**\n>>> {message.content[:1000]}\n\n"
-                    f"[Jump to Vouch]({vouch_link})\n\n"
-                    f"Click **Done** to:\n"
-                    f"• Generate transcript\n"
-                    f"• Log points for clients\n"
-                    f"• Close this ticket"
-                ),
-                color=0x00ff00,
-                timestamp=message.created_at
-            )
-            embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
-            embed.set_footer(text=f"Vouched by {message.author}")
-
-            view = VouchConfirmView(ticket_channel.id, mm_id, vouch_link)
-            mm_member = message.guild.get_member(mm_id)
-            await ticket_channel.send(content=mm_member.mention, embed=embed, view=view)
+                view = VouchConfirmView(ticket_channel.id, mm_id, message.jump_url)
+                await ticket_channel.send(content=mm_member.mention, embed=embed, view=view)
 
         except Exception as e:
             print(f"[VOUCH DEBUG] ❌ Vouch detection error: {e}")
