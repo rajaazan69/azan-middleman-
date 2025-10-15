@@ -62,6 +62,9 @@ async def load_cogs():
     
     await bot.load_extension("cogs.crypto")
     print("[✅] Loaded cog: cogs.crypto")
+    
+    await bot.load_extension("cogs.auto_react")
+    print("[✅] Loaded cog: cogs.auto_react")
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
