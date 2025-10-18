@@ -36,6 +36,10 @@ class Quota(commands.Cog):
                         {"$set": {"completed": 0, "week": current_week}}
                     )
             print(f"✅ [Quota Reset] Week {current_week} processed.")
+
+            # Update quota board after reset
+            await self.update_quota_board()
+
         except Exception as e:
             print(f"[Quota Reset Error] {e}")
 
@@ -44,91 +48,106 @@ class Quota(commands.Cog):
         await self.bot.wait_until_ready()
 
     # ------------------------- INTERNAL METHOD -------------------------
-    async def _send_quota_embed(self, channel: discord.TextChannel):
-        guild = channel.guild
-        colls = await collections()
-        quota_coll = colls["weeklyQuota"]
+    async def _generate_quota_embed(self):
+        """Generates a quota embed without sending it."""
+        embed = None
+        for guild in self.bot.guilds:
+            colls = await collections()
+            quota_coll = colls["weeklyQuota"]
 
-        mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
-        if not mm_role:
-            print(f"[Quota Embed] Middleman role not found in guild {guild.id}")
+            mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
+            if not mm_role:
+                continue
+
+            role_members = [m for m in mm_role.members if not m.bot]
+            all_mms = await quota_coll.find().to_list(length=None)
+            db_data = {int(mm["_id"]): mm for mm in all_mms}
+
+            current_week = datetime.utcnow().isocalendar()[1]
+            mm_progress = []
+            for member in role_members:
+                db_mm = db_data.get(member.id)
+                completed = 0
+                if db_mm:
+                    completed = db_mm.get("completed", 0)
+                    if db_mm.get("week") != current_week:
+                        completed = 0
+
+                mm_progress.append({
+                    "id": member.id,
+                    "name": member.display_name,
+                    "completed": completed
+                })
+
+            mm_progress.sort(key=lambda x: x["completed"], reverse=True)
+            completed_quota = [m for m in mm_progress if m["completed"] >= WEEKLY_QUOTA]
+            incomplete_quota = [m for m in mm_progress if m["completed"] < WEEKLY_QUOTA]
+
+            embed = discord.Embed(
+                title="**WEEKLY MIDDLEMEN QUOTA**",
+                description=(
+                    f"**Weekly Goal:** {WEEKLY_QUOTA} trades per middleman\n"
+                    f"**Current Week:** {current_week}\n\n"
+                    f"__**Completed Quota:**__\n"
+                    + (
+                        "\n".join([
+                            f"**#{i+1}** <@{mm['id']}> — **{mm['completed']} tickets**"
+                            for i, mm in enumerate(completed_quota)
+                        ]) if completed_quota else "*No middlemen have met their quota yet.*"
+                    )
+                    + "\n\n__**Incomplete Quota:**__\n"
+                    + (
+                        "\n".join([
+                            f"**#{i+1+len(completed_quota)}** <@{mm['id']}> — **{mm['completed']} / {WEEKLY_QUOTA}**"
+                            for i, mm in enumerate(incomplete_quota)
+                        ]) if incomplete_quota else "*Everyone has met the quota!*"
+                    )
+                ),
+                color=discord.Color.from_str("#2B2D31")
+            )
+            embed.set_footer(
+                text="Weekly middleman progress — auto resets every Monday",
+                icon_url=self.bot.user.display_avatar.url
+            )
+            embed.timestamp = datetime.utcnow()
+
+        return embed
+
+    # ------------------------- UPDATE QUOTA BOARD -------------------------
+    async def update_quota_board(self):
+        """Updates existing quota embed, or sends a new one if none exists."""
+        channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
+        if not channel:
+            print(f"[Quota Update] Channel with ID {QUOTA_CHANNEL_ID} not found!")
             return
 
-        role_members = [m for m in mm_role.members if not m.bot]
-        all_mms = await quota_coll.find().to_list(length=None)
-        db_data = {int(mm["_id"]): mm for mm in all_mms}
+        embed = await self._generate_quota_embed()
+        if not embed:
+            return
 
-        current_week = datetime.utcnow().isocalendar()[1]
-        mm_progress = []
-        for member in role_members:
-            db_mm = db_data.get(member.id)
-            completed = 0
-            if db_mm:
-                completed = db_mm.get("completed", 0)
-                if db_mm.get("week") != current_week:
-                    completed = 0
+        # Try to find existing embed
+        quota_msg = None
+        async for msg in channel.history(limit=50):
+            if msg.author == self.bot.user and msg.embeds:
+                if "WEEKLY MIDDLEMEN QUOTA" in msg.embeds[0].title:
+                    quota_msg = msg
+                    break
 
-            mm_progress.append({
-                "id": member.id,
-                "name": member.display_name,
-                "completed": completed
-            })
-
-        mm_progress.sort(key=lambda x: x["completed"], reverse=True)
-        completed_quota = [m for m in mm_progress if m["completed"] >= WEEKLY_QUOTA]
-        incomplete_quota = [m for m in mm_progress if m["completed"] < WEEKLY_QUOTA]
-
-        embed = discord.Embed(
-            title="**WEEKLY MIDDLEMEN QUOTA**",
-            description=(
-                f"**Weekly Goal:** {WEEKLY_QUOTA} trades per middleman\n"
-                f"**Current Week:** {current_week}\n\n"
-                f"__**Completed Quota:**__\n"
-                + (
-                    "\n".join([
-                        f"**#{i+1}** <@{mm['id']}> — **{mm['completed']} tickets**"
-                        for i, mm in enumerate(completed_quota)
-                    ]) if completed_quota else "*No middlemen have met their quota yet.*"
-                )
-                + "\n\n__**Incomplete Quota:**__\n"
-                + (
-                    "\n".join([
-                        f"**#{i+1+len(completed_quota)}** <@{mm['id']}> — **{mm['completed']} / {WEEKLY_QUOTA}**"
-                        for i, mm in enumerate(incomplete_quota)
-                    ]) if incomplete_quota else "*Everyone has met the quota!*"
-                )
-            ),
-            color=discord.Color.from_str("#2B2D31")
-        )
-        embed.set_footer(
-            text="Weekly middleman progress — auto resets every Monday",
-            icon_url=self.bot.user.display_avatar.url
-        )
-        embed.timestamp = datetime.utcnow()
-
-        await channel.send(embed=embed)
+        if quota_msg:
+            await quota_msg.edit(embed=embed)
+        else:
+            await channel.send(embed=embed)
 
     # ------------------------- COMMAND -------------------------
     @commands.command(name="quota", aliases=["quotaboard", "qboard"])
     async def quota_command(self, ctx: commands.Context):
-        await self._send_quota_embed(ctx.channel)
+        await self.update_quota_board()
 
     # ------------------------- SEND QUOTA ON STARTUP -------------------------
     async def send_quota_on_startup(self):
+        """Send the quota embed if one doesn't exist. Call this from bot.py."""
         await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
-        if not channel:
-            print(f"[Quota Startup] Channel with ID {QUOTA_CHANNEL_ID} not found!")
-            return
-
-        # Check if a quota message already exists
-        async for msg in channel.history(limit=50):
-            if msg.author == self.bot.user and msg.embeds:
-                if "WEEKLY MIDDLEMEN QUOTA" in msg.embeds[0].title:
-                    return  # Already exists
-
-        # Send the embed
-        await self._send_quota_embed(channel)
+        await self.update_quota_board()
 
 
 # -------------------------
