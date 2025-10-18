@@ -7,7 +7,7 @@ from utils.db import collections
 # CONFIG
 # -------------------------
 WEEKLY_QUOTA = 5
-MIDDLEMAN_ROLE_ID = 1373029428409405500  # 🔧 Replace this with your actual Middleman role ID
+MIDDLEMAN_ROLE_ID = 1373029428409405500  # 🔧 Replace with your actual Middleman role ID
 
 # -------------------------
 # MAIN COG
@@ -26,8 +26,8 @@ class Quota(commands.Cog):
         """Resets middleman weekly progress every Monday."""
         try:
             colls = await collections()
-            mm_coll = colls["middlemen"]
-            all_mms = await mm_coll.find().to_list(length=None)
+            quota_coll = colls["weeklyQuota"]  # ✅ separate collection for weekly quota
+            all_mms = await quota_coll.find().to_list(length=None)
 
             if not all_mms:
                 return
@@ -37,7 +37,7 @@ class Quota(commands.Cog):
 
             for mm in all_mms:
                 if mm.get("week") != current_week:
-                    await mm_coll.update_one(
+                    await quota_coll.update_one(
                         {"_id": mm["_id"]},
                         {"$set": {"completed": 0, "week": current_week}}
                     )
@@ -59,7 +59,7 @@ class Quota(commands.Cog):
         """Displays the weekly middleman quota leaderboard."""
         guild = ctx.guild
         colls = await collections()
-        mm_coll = colls["middlemen"]
+        quota_coll = colls["weeklyQuota"]  # ✅ use weekly quota collection
 
         # Get the Middleman role
         mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
@@ -70,7 +70,7 @@ class Quota(commands.Cog):
         role_members = [m for m in mm_role.members if not m.bot]
 
         # Fetch DB data
-        all_mms = await mm_coll.find().to_list(length=None)
+        all_mms = await quota_coll.find().to_list(length=None)
         db_data = {int(mm["_id"]): mm for mm in all_mms}
 
         current_week = datetime.utcnow().isocalendar()[1]
