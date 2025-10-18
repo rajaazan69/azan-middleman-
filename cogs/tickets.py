@@ -588,31 +588,43 @@ class Tickets(commands.Cog):
     async def close_ticket(self, ctx: commands.Context):
         ch = ctx.channel
         cat_id = getattr(ch.category, "id", None)
-
+    
         if not isinstance(ch, discord.TextChannel) or cat_id != TICKET_CATEGORY_ID:
             return await ctx.reply("❌ You can only close ticket channels!", mention_author=False)
-
+    
         allowed = (
             any(r.id == MIDDLEMAN_ROLE_ID for r in ctx.author.roles)
             or ctx.author.guild_permissions.administrator
         )
         if not allowed:
             return await ctx.reply("❌ You don't have permission to close this ticket.", mention_author=False)
-
+    
         colls = await collections()
         tickets_coll = colls["tickets"]
         mm_coll = colls["middlemen"]
-
+    
         ticket_data = await tickets_coll.find_one({"channelId": str(ch.id)})
         claimed_by = ticket_data.get("claimedBy") if ticket_data else None
-
+    
         if claimed_by:
             try:
                 mm_id_for_db = int(claimed_by)
             except Exception:
                 mm_id_for_db = claimed_by
-            await mm_coll.update_one({"_id": mm_id_for_db}, {"$inc": {"completed": 1}}, upsert=True)
-
+    
+            from datetime import datetime
+            current_week = datetime.utcnow().isocalendar()[1]
+    
+            # Update MM quota progress
+            await mm_coll.update_one(
+                {"_id": mm_id_for_db},
+                {
+                    "$inc": {"completed": 1},
+                    "$set": {"week": current_week}
+                },
+                upsert=True
+            )
+    
         embed = discord.Embed(
             title="🔒 Ticket Closed",
             description="Select an option below to generate the transcript, log points, or delete the ticket.",
@@ -621,7 +633,7 @@ class Tickets(commands.Cog):
         embed.add_field(name="Ticket Name", value=ch.name, inline=True)
         embed.add_field(name="Closed By", value=ctx.author.mention, inline=True)
         embed.set_footer(text="Ticket Panel")
-
+    
         await ctx.send(embed=embed, view=ClosePanel())
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel):
