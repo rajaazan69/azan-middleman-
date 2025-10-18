@@ -43,13 +43,15 @@ async def on_ready():
     # ---- Send weekly quota if none exists ----
     quota_cog = bot.get_cog("Quota")
     if quota_cog:
-        await quota_cog.send_quota_on_startup()
+        # Create a task so it doesn't block on_ready
+        asyncio.create_task(quota_cog.send_quota_on_startup())
 
     # ---- Send/update middleman leaderboard ----
     mm_lb_cog = bot.get_cog("MiddlemanLeaderboard")
     if mm_lb_cog:
-        for guild in bot.guilds:  # Loop through all guilds the bot is in
-            await mm_lb_cog.update_or_create_lb(guild)
+        # Loop through all guilds, send leaderboard only once
+        for guild in bot.guilds:
+            asyncio.create_task(mm_lb_cog.update_or_create_lb(guild))
 
 # -------- Web server --------
 async def run_web():
