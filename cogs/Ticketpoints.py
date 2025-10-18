@@ -3,11 +3,9 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 from utils.db import collections
+import os
 
-# Hardcoded for now
 LEADERBOARD_CHANNEL_ID = 1402387584860033106
-# We'll print the new leaderboard message ID if it needs creation
-
 TICKET_CATEGORY_ID = 1373027564926406796  # Replace with your ticket category
 
 class TicketPoints(commands.Cog):
@@ -39,10 +37,10 @@ class TicketPoints(commands.Cog):
         # Add points
         for uid in user_ids:
             await points_coll.update_one(
-            {"userId": uid},
-            {"$inc": {"points": 1}, "$setOnInsert": {"userId": uid}},
-            upsert=True
-        )
+                {"userId": uid},
+                {"$inc": {"points": 1}, "$setOnInsert": {"userId": uid}},
+                upsert=True
+            )
 
         # -------------------------------
         # Handle leaderboard
@@ -54,44 +52,48 @@ class TicketPoints(commands.Cog):
             return user_ids
 
         # Try to fetch message ID from env
-        import os
         lb_message_id = os.getenv("LEADERBOARD_MESSAGE_ID")
         lb_message = None
-
         if lb_message_id:
             try:
                 lb_message = await lb_channel.fetch_message(int(lb_message_id))
             except Exception:
                 lb_message = None
 
-        # If message doesn't exist, create new
+        # Create message if missing
         if not lb_message:
             embed = discord.Embed(
-                title="🏆 Top Clients This Month",
-                description="No data yet.",
+                title="# TOP CLIENTS THIS MONTH",
+                description="> No data yet",
                 color=0x2B2D31,
                 timestamp=datetime.utcnow()
             )
-            embed.set_footer(text="Client Leaderboard")
+            embed.set_footer(text="Client Leaderboard | Auto-updates")
             lb_message = await lb_channel.send(embed=embed)
             print(f"ℹ️ New leaderboard message created! ID: {lb_message.id}")
             print("Update your .env LEADERBOARD_MESSAGE_ID with this ID.")
 
-        # Update leaderboard
-        top_cursor = points_coll.find().sort("points", -1).limit(10)
-        top_users = await top_cursor.to_list(length=10)
-        leaderboard_text = "\n".join(
-            f"**#{i+1}** <@{user['userId']}> — **{user['points']}** point{'s' if user['points'] != 1 else ''}"
-            for i, user in enumerate(top_users)
-        ) or "No data yet."
+        # Fetch top users
+        top_users_cursor = points_coll.find().sort("points", -1).limit(10)
+        top_users = await top_users_cursor.to_list(length=10)
 
+        # Format leaderboard
+        leaderboard_lines = []
+        for i, user in enumerate(top_users):
+            rank = f"#{i+1}"
+            line = f"> **{rank} | <@{user['userId']}> | {user['points']} point{'s' if user['points'] != 1 else ''}**"
+            leaderboard_lines.append(line)
+
+        leaderboard_text = "\n".join(leaderboard_lines) or "> No data yet"
+
+        # Update embed
         embed = discord.Embed(
-            title="🏆 Top Clients This Month",
+            title="# TOP CLIENTS THIS MONTH",
             description=leaderboard_text,
             color=0x2B2D31,
             timestamp=datetime.utcnow()
         )
-        embed.set_footer(text="Client Leaderboard")
+        embed.set_footer(text="Client Leaderboard | Auto-updates")
         await lb_message.edit(embed=embed)
 
         return user_ids
