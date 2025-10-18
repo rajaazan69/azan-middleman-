@@ -8,7 +8,7 @@ from utils.db import collections
 # -------------------------
 WEEKLY_QUOTA = 5
 MIDDLEMAN_ROLE_ID = 1373029428409405500  # 🔧 Replace with your actual Middleman role ID
-QUOTA_CHANNEL_ID = 123456789012345678  # 🔧 Replace with your actual channel ID
+QUOTA_CHANNEL_ID = 1429161206467268609  # 🔧 Replace with your actual channel ID
 
 # -------------------------
 # MAIN COG
