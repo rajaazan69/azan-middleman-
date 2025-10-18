@@ -18,57 +18,49 @@ bot.remove_command("help")
 
 # -------- Load Cogs --------
 async def load_cogs():
-    await bot.load_extension("cogs.tickets")
-    print("[✅] Loaded cog: cogs.tickets")
+    cogs = [
+        "cogs.tickets",
+        "cogs.transcripts",
+        "cogs.tags",
+        "cogs.sticky",
+        "cogs.servers",
+        "cogs.moderation",
+        "cogs.ticket_commands",
+        "cogs.roblox",
+        "cogs.Ticketpoints",
+        "cogs.welcome",
+        "cogs.s",
+        "cogs.a",
+        "cogs.vouch",
+        "cogs.help",
+        "cogs.crypto",
+        "cogs.auto_react"
+    ]
+    for cog in cogs:
+        await bot.load_extension(cog)
+        print(f"[✅] Loaded cog: {cog}")
 
-    await bot.load_extension("cogs.transcripts")
-    print("[✅] Loaded cog: cogs.transcripts")
-
-    await bot.load_extension("cogs.tags")
-    print("[✅] Loaded cog: cogs.tags")
-
-    await bot.load_extension("cogs.sticky")
-    print("[✅] Loaded cog: cogs.sticky")
-
-    await bot.load_extension("cogs.servers")
-    print("[✅] Loaded cog: cogs.servers")
-
-    await bot.load_extension("cogs.moderation")
-    print("[✅] Loaded cog: cogs.moderation")
-
-    await bot.load_extension("cogs.ticket_commands")
-    print("[✅] Loaded cog: cogs.ticket_commands")
-
-    await bot.load_extension("cogs.roblox")
-    print("[✅] Loaded cog: cogs.roblox")
-
-    await bot.load_extension("cogs.Ticketpoints")
-    print("[✅] Loaded cog: cogs.Ticketpoints")
-
-    await bot.load_extension("cogs.welcome")
-    print("[✅] Loaded cog: cogs.welcome")
-    
-    await bot.load_extension("cogs.s")
-    print("[✅] Loaded cog: cogs.s")
-    
-    await bot.load_extension("cogs.a")
-    print("[✅] Loaded cog: cogs.a")
-    
-    await bot.load_extension("cogs.vouch")
-    print("[✅] Loaded cog: cogs.vouch")
-    
-    await bot.load_extension("cogs.help")
-    print("[✅] Loaded cog: cogs.vouch")
-    
-    await bot.load_extension("cogs.crypto")
-    print("[✅] Loaded cog: cogs.crypto")
-    
-    await bot.load_extension("cogs.auto_react")
-    print("[✅] Loaded cog: cogs.auto_react")
+# -------- Startup Event --------
 @bot.event
 async def on_ready():
+    if getattr(bot, "startup_done", False):
+        return  # Avoid running multiple times on reconnects
+    bot.startup_done = True
+
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
 
+    # ---- Send weekly quota if none exists ----
+    quota_cog = bot.get_cog("Quota")
+    if quota_cog:
+        await quota_cog.send_quota_on_startup()
+
+    # ---- Send/update middleman leaderboard ----
+    mm_lb_cog = bot.get_cog("MiddlemanLeaderboard")
+    if mm_lb_cog:
+        for guild in bot.guilds:  # Loop through all guilds the bot is in
+            await mm_lb_cog.update_or_create_lb(guild)
+
+# -------- Web server --------
 async def run_web():
     import aiohttp.web
     app = make_app()
@@ -78,6 +70,7 @@ async def run_web():
     await site.start()
     print(f"🌐 Web server running on :{PORT}")
 
+# -------- Main --------
 async def main():
     await load_cogs()
     await asyncio.gather(
