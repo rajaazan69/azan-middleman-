@@ -7,8 +7,8 @@ from utils.db import collections
 # CONFIG
 # -------------------------
 WEEKLY_QUOTA = 5
-MIDDLEMAN_ROLE_ID = 1373029428409405500  # 🔧 Replace with your actual Middleman role ID
-QUOTA_CHANNEL_ID = 1429161206467268609  # 🔧 Replace with your actual channel ID
+MIDDLEMAN_ROLE_ID = 1373029428409405500
+QUOTA_CHANNEL_ID = 1429161206467268609
 
 # -------------------------
 # MAIN COG
@@ -17,7 +17,6 @@ class Quota(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.reset_weekly_quota.start()
-        self.bot.loop.create_task(self.send_quota_on_startup())
 
     def cog_unload(self):
         self.reset_weekly_quota.cancel()
@@ -25,7 +24,6 @@ class Quota(commands.Cog):
     # ------------------------- AUTO RESET -------------------------
     @tasks.loop(hours=24)
     async def reset_weekly_quota(self):
-        """Resets middleman weekly progress every Monday."""
         try:
             colls = await collections()
             quota_coll = colls["weeklyQuota"]
@@ -58,29 +56,23 @@ class Quota(commands.Cog):
     # ------------------------- COMMAND -------------------------
     @commands.command(name="quota", aliases=["quotaboard", "qboard"])
     async def quota_command(self, ctx: commands.Context = None, channel: discord.TextChannel = None):
-        """Displays the weekly middleman quota leaderboard."""
-        guild = self.bot.get_guild(QUOTA_CHANNEL_ID) if ctx is None else ctx.guild
+        guild = self.bot.get_guild(channel.guild.id if channel else ctx.guild.id)
         colls = await collections()
         quota_coll = colls["weeklyQuota"]
 
-        # Get the Middleman role
         mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
         if not mm_role:
             if ctx:
                 return await ctx.reply("❌ Middleman role not found!", mention_author=False)
             return
 
-        # Get all members with MM role
         role_members = [m for m in mm_role.members if not m.bot]
-
-        # Fetch DB data
         all_mms = await quota_coll.find().to_list(length=None)
         db_data = {int(mm["_id"]): mm for mm in all_mms}
 
         current_week = datetime.utcnow().isocalendar()[1]
         mm_progress = []
 
-        # Combine DB and Role data
         for member in role_members:
             db_mm = db_data.get(member.id)
             completed = 0
@@ -95,12 +87,10 @@ class Quota(commands.Cog):
                 "completed": completed
             })
 
-        # Sort leaderboard
         mm_progress.sort(key=lambda x: x["completed"], reverse=True)
         completed_quota = [m for m in mm_progress if m["completed"] >= WEEKLY_QUOTA]
         incomplete_quota = [m for m in mm_progress if m["completed"] < WEEKLY_QUOTA]
 
-        # ---------------- EMBED BUILD ----------------
         embed = discord.Embed(
             title="**WEEKLY MIDDLEMEN QUOTA**",
             description=(
@@ -143,12 +133,11 @@ class Quota(commands.Cog):
             print(f"[Quota Startup] Channel with ID {QUOTA_CHANNEL_ID} not found!")
             return
 
-        # Optionally, check if last quota message exists
         async for msg in channel.history(limit=50):
-            if msg.author == self.bot.user and "WEEKLY MIDDLEMEN QUOTA" in (msg.embeds[0].title if msg.embeds else ""):
-                return  # Already exists, don't resend
+            if msg.author == self.bot.user and msg.embeds:
+                if "WEEKLY MIDDLEMEN QUOTA" in msg.embeds[0].title:
+                    return  # Already exists
 
-        # Send quota if none exists
         await self.quota_command(channel=channel)
 
 
@@ -156,4 +145,7 @@ class Quota(commands.Cog):
 # Cog setup
 # -------------------------
 async def setup(bot):
-    await bot.add_cog(Quota(bot))
+    cog = Quota(bot)
+    await bot.add_cog(cog)
+    # Schedule the startup task after cog is loaded
+    bot.loop.create_task(cog.send_quota_on_startup())
