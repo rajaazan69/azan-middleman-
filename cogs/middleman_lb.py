@@ -10,22 +10,32 @@ class MiddlemanLeaderboard(commands.Cog):
     # ------------------------- MIDDLEMAN LEADERBOARD -------------------------
     @commands.command(name="mmlb", aliases=["middlemanlb", "mmlboard"])
     async def show_mm_leaderboard(self, ctx: commands.Context):
-        """Displays the overall middleman leaderboard."""
-        colls = await collections()
-        mm_coll = colls["middlemen"]
+        """Displays the overall middleman leaderboard (top 10)."""
+        try:
+            colls = await collections()
+            mm_coll = colls.get("middlemen") if isinstance(colls, dict) else colls["middlemen"]
+        except Exception as e:
+            return await ctx.reply(f"❌ Could not access DB: {e}", mention_author=False)
 
-        all_mms = await mm_coll.find().sort("completed", -1).limit(10).to_list(length=10)
+        try:
+            # fetch top 10 by completed
+            docs = await mm_coll.find().sort("completed", -1).limit(10).to_list(length=10)
+        except Exception as e:
+            return await ctx.reply(f"❌ Query failed: {e}", mention_author=False)
 
-        if not all_mms:
+        if not docs:
             desc = "*No middleman data yet.*"
         else:
-            desc = "\n".join(
-                f"**#{i+1}** <@{mm['_id']}> — **{mm.get('completed', 0)}** ticket{'s' if mm.get('completed', 0) != 1 else ''}"
-                for i, mm in enumerate(all_mms)
-            )
+            lines = []
+            for i, mm in enumerate(docs, start=1):
+                completed = mm.get("completed", 0)
+                # ensure id present
+                mm_id = mm.get("_id", "unknown")
+                lines.append(f"**#{i}** <@{mm_id}> — **{completed}** ticket{'s' if completed != 1 else ''}")
+            desc = "\n".join(lines)
 
         embed = discord.Embed(
-            title="# **MIDDLEMAN LEADERBOARD**",
+            title=">**MIDDLEMAN LEADERBOARD**",
             description=f"__**Top Middlemen:**__\n{desc}",
             color=discord.Color.from_str("#2B2D31"),
             timestamp=datetime.utcnow()
@@ -38,12 +48,36 @@ class MiddlemanLeaderboard(commands.Cog):
     @commands.command(name="resetmmlb", aliases=["resetmiddlemanlb"])
     @commands.has_permissions(administrator=True)
     async def reset_mm_leaderboard(self, ctx: commands.Context):
-        """Resets all middleman stats."""
-        colls = await collections()
-        mm_coll = colls["middlemen"]
+        """Resets all middleman completed counts to 0 and reports results."""
+        try:
+            colls = await collections()
+            mm_coll = colls.get("middlemen") if isinstance(colls, dict) else colls["middlemen"]
+        except Exception as e:
+            return await ctx.reply(f"❌ Could not access DB: {e}", mention_author=False)
 
-        await mm_coll.update_many({}, {"$set": {"completed": 0}})
-        await ctx.reply("✅ All middleman stats have been reset to **0**.", mention_author=False)
+        try:
+            # optionally show counts before resetting
+            total_before = await mm_coll.count_documents({})
+            result = await mm_coll.update_many({}, {"$set": {"completed": 0}})
+            # result is MotorUpdateResult or similar; some drivers expose modified_count
+            modified = getattr(result, "modified_count", None)
+            matched = getattr(result, "matched_count", None)
+
+            # also fetch a total after to sanity-check
+            total_after = await mm_coll.count_documents({})
+
+            reply = (
+                f"**Reset middleman stats**.\n"
+                f"**Documents matched**: {matched if matched is not None else total_before}\n"
+                f"**Documents modified**: {modified if modified is not None else 'unknown'}\n"
+                f"**Total documents before**: {total_before}\n"
+                f"**Total documents after**: {total_after}"
+            )
+            await ctx.reply(reply, mention_author=False)
+        except Exception as e:
+            await ctx.reply(f"❌ Reset failed: {e}", mention_author=False)
+            # also print to your bot console for debugging
+            print("[resetmmlb] Reset error:", e)
 
 # -------------------------
 # Cog setup
