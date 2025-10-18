@@ -4,7 +4,7 @@ from utils.db import collections
 from datetime import datetime
 
 # optional: constant for your leaderboard channel
-LB_CHANNEL_ID = 1373027974827212923  # change to your actual leaderboard channel ID
+LB_CHANNEL_ID = 1409663820053483642  # change to your actual leaderboard channel ID
 
 class MiddlemanLeaderboard(commands.Cog):
     def __init__(self, bot):
