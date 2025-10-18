@@ -3,81 +3,92 @@ from discord.ext import commands
 from utils.db import collections
 from datetime import datetime
 
+# optional: constant for your leaderboard channel
+LB_CHANNEL_ID = 1373027974827212923  # change to your actual leaderboard channel ID
+
+
 class MiddlemanLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ------------------------- MIDDLEMAN LEADERBOARD -------------------------
-    @commands.command(name="mmlb", aliases=["middlemanlb", "mmlboard"])
-    async def show_mm_leaderboard(self, ctx: commands.Context):
-        """Displays the overall middleman leaderboard (top 10)."""
+    # ------------------------- UPDATE OR CREATE MIDDLEMAN LB -------------------------
+    async def update_or_create_lb(self, guild: discord.Guild):
+        """Finds an existing middleman leaderboard message or creates one."""
         try:
             colls = await collections()
-            mm_coll = colls.get("middlemen") if isinstance(colls, dict) else colls["middlemen"]
+            mm_coll = colls["middlemen"]
         except Exception as e:
-            return await ctx.reply(f"❌ Could not access DB: {e}", mention_author=False)
+            print(f"[MM-LB] DB error: {e}")
+            return None
 
-        try:
-            # fetch top 10 by completed
-            docs = await mm_coll.find().sort("completed", -1).limit(10).to_list(length=10)
-        except Exception as e:
-            return await ctx.reply(f"❌ Query failed: {e}", mention_author=False)
-
+        # Fetch top 10 MMs
+        docs = await mm_coll.find().sort("completed", -1).limit(10).to_list(length=10)
         if not docs:
             desc = "*No middleman data yet.*"
         else:
-            lines = []
-            for i, mm in enumerate(docs, start=1):
-                completed = mm.get("completed", 0)
-                # ensure id present
-                mm_id = mm.get("_id", "unknown")
-                lines.append(f"**#{i}** <@{mm_id}> — **{completed}** ticket{'s' if completed != 1 else ''}")
+            lines = [
+                f"**#{i+1}** <@{mm['_id']}> — **{mm.get('completed', 0)}** ticket{'s' if mm.get('completed', 0) != 1 else ''}"
+                for i, mm in enumerate(docs)
+            ]
             desc = "\n".join(lines)
 
         embed = discord.Embed(
-            title=">**MIDDLEMAN LEADERBOARD**",
+            title="> **MIDDLEMAN LEADERBOARD**",
             description=f"__**Top Middlemen:**__\n{desc}",
             color=discord.Color.from_str("#2B2D31"),
             timestamp=datetime.utcnow()
         )
         embed.set_footer(text="Middleman leaderboard — auto updates on ticket close")
 
-        await ctx.send(embed=embed)
+        lb_channel = guild.get_channel(LB_CHANNEL_ID)
+        if not lb_channel:
+            print("[MM-LB] ❌ Leaderboard channel not found.")
+            return None
+
+        # Try to find existing leaderboard message in the last few messages
+        async for msg in lb_channel.history(limit=20):
+            if msg.embeds and msg.embeds[0].title and "MIDDLEMAN LEADERBOARD" in msg.embeds[0].title:
+                await msg.edit(embed=embed)
+                print("[MM-LB] ✅ Updated existing leaderboard message.")
+                return msg
+
+        # If no existing LB found, send a new one
+        new_msg = await lb_channel.send(embed=embed)
+        print("[MM-LB] 🆕 Sent new leaderboard message.")
+        return new_msg
+
+    # ------------------------- MIDDLEMAN LEADERBOARD COMMAND -------------------------
+    @commands.command(name="mmlb", aliases=["middlemanlb", "mmlboard"])
+    async def show_mm_leaderboard(self, ctx: commands.Context):
+        """Displays or updates the middleman leaderboard (top 10)."""
+        msg = await self.update_or_create_lb(ctx.guild)
+        if msg:
+            await ctx.reply(f"✅ Middleman leaderboard {'updated' if msg.edited_at else 'created'} in {msg.channel.mention}.", mention_author=False)
+        else:
+            await ctx.reply("⚠️ Failed to update leaderboard.", mention_author=False)
 
     # ------------------------- RESET LEADERBOARD -------------------------
     @commands.command(name="resetmmlb", aliases=["resetmiddlemanlb"])
     @commands.has_permissions(administrator=True)
     async def reset_mm_leaderboard(self, ctx: commands.Context):
-        """Resets all middleman completed counts to 0 and reports results."""
+        """Resets all middleman completed counts to 0 and refreshes the leaderboard."""
         try:
             colls = await collections()
-            mm_coll = colls.get("middlemen") if isinstance(colls, dict) else colls["middlemen"]
+            mm_coll = colls["middlemen"]
         except Exception as e:
             return await ctx.reply(f"❌ Could not access DB: {e}", mention_author=False)
 
         try:
-            # optionally show counts before resetting
-            total_before = await mm_coll.count_documents({})
             result = await mm_coll.update_many({}, {"$set": {"completed": 0}})
-            # result is MotorUpdateResult or similar; some drivers expose modified_count
-            modified = getattr(result, "modified_count", None)
-            matched = getattr(result, "matched_count", None)
+            modified = getattr(result, "modified_count", 0)
+            await ctx.reply(f"✅ Reset {modified} middlemen stats to 0.", mention_author=False)
 
-            # also fetch a total after to sanity-check
-            total_after = await mm_coll.count_documents({})
-
-            reply = (
-                f"**Reset middleman stats**.\n"
-                f"**Documents matched**: {matched if matched is not None else total_before}\n"
-                f"**Documents modified**: {modified if modified is not None else 'unknown'}\n"
-                f"**Total documents before**: {total_before}\n"
-                f"**Total documents after**: {total_after}"
-            )
-            await ctx.reply(reply, mention_author=False)
+            # Auto refresh leaderboard after reset
+            await self.update_or_create_lb(ctx.guild)
         except Exception as e:
             await ctx.reply(f"❌ Reset failed: {e}", mention_author=False)
-            # also print to your bot console for debugging
             print("[resetmmlb] Reset error:", e)
+
 
 # -------------------------
 # Cog setup
