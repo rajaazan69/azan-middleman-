@@ -16,29 +16,20 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 bot.remove_command("help")
 
-# -------- Load Cogs --------
+# -------- Load Cogs Recursively --------
 async def load_cogs():
-    cogs = [
-        "cogs.tickets",
-        "cogs.transcripts",
-        "cogs.tags",
-        "cogs.sticky",
-        "cogs.servers",
-        "cogs.moderation",
-        "cogs.ticket_commands",
-        "cogs.roblox",
-        "cogs.Ticketpoints",
-        "cogs.welcome",
-        "cogs.s",
-        "cogs.a",
-        "cogs.vouch",
-        "cogs.help",
-        "cogs.crypto",
-        "cogs.auto_react"
-    ]
-    for cog in cogs:
-        await bot.load_extension(cog)
-        print(f"[✅] Loaded cog: {cog}")
+    cog_folder = "cogs"
+    for root, _, files in os.walk(cog_folder):
+        for file in files:
+            if file.endswith(".py") and not file.startswith("__"):
+                # Convert file path to module path
+                path = os.path.join(root, file)
+                module = path.replace(os.sep, ".").replace(".py", "")
+                try:
+                    await bot.load_extension(module)
+                    print(f"[✅] Loaded cog: {module}")
+                except Exception as e:
+                    print(f"[❌] Failed to load {module}: {e}")
 
 # -------- Startup Event --------
 @bot.event
