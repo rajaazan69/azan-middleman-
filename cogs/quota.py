@@ -3,12 +3,19 @@ from discord.ext import commands, tasks
 from datetime import datetime
 from utils.db import collections
 
+# -------------------------
+# CONFIG
+# -------------------------
 WEEKLY_QUOTA = 5
+MIDDLEMAN_ROLE_ID = 1373029428409405500  # 🔧 Replace this with your actual Middleman role ID
 
+# -------------------------
+# MAIN COG
+# -------------------------
 class Quota(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.reset_weekly_quota.start()  # auto reset on startup
+        self.reset_weekly_quota.start()
 
     def cog_unload(self):
         self.reset_weekly_quota.cancel()
@@ -16,11 +23,14 @@ class Quota(commands.Cog):
     # ------------------------- AUTO RESET -------------------------
     @tasks.loop(hours=24)
     async def reset_weekly_quota(self):
-        """Resets middleman weekly progress when the week changes."""
+        """Resets middleman weekly progress every Monday."""
         try:
             colls = await collections()
             mm_coll = colls["middlemen"]
             all_mms = await mm_coll.find().to_list(length=None)
+
+            if not all_mms:
+                return
 
             current_week = datetime.utcnow().isocalendar()[1]
             reset_count = 0
@@ -35,6 +45,7 @@ class Quota(commands.Cog):
 
             if reset_count > 0:
                 print(f"✅ [Quota Reset] Reset weekly quota for {reset_count} middlemen (Week {current_week})")
+
         except Exception as e:
             print(f"[Quota Reset Error] {e}")
 
@@ -46,30 +57,43 @@ class Quota(commands.Cog):
     @commands.command(name="quota", aliases=["quotaboard", "qboard"])
     async def quota_command(self, ctx: commands.Context):
         """Displays the weekly middleman quota leaderboard."""
+        guild = ctx.guild
         colls = await collections()
         mm_coll = colls["middlemen"]
 
+        # Get the Middleman role
+        mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
+        if not mm_role:
+            return await ctx.reply("❌ Middleman role not found!", mention_author=False)
+
+        # Get all members with MM role
+        role_members = [m for m in mm_role.members if not m.bot]
+
+        # Fetch DB data
         all_mms = await mm_coll.find().to_list(length=None)
-        if not all_mms:
-            return await ctx.reply("❌ No middlemen data found.", mention_author=False)
+        db_data = {int(mm["_id"]): mm for mm in all_mms}
 
         current_week = datetime.utcnow().isocalendar()[1]
         mm_progress = []
 
-        for mm in all_mms:
-            completed = mm.get("completed", 0)
-            week = mm.get("week")
+        # Combine DB and Role data
+        for member in role_members:
+            db_mm = db_data.get(member.id)
+            completed = 0
+            week = current_week
 
-            # Reset display progress if week mismatched
-            if week != current_week:
-                completed = 0
+            if db_mm:
+                completed = db_mm.get("completed", 0)
+                if db_mm.get("week") != current_week:
+                    completed = 0
 
             mm_progress.append({
-                "id": mm["_id"],
+                "id": member.id,
+                "name": member.display_name,
                 "completed": completed
             })
 
-        # Sort by completed count
+        # Sort leaderboard
         mm_progress.sort(key=lambda x: x["completed"], reverse=True)
 
         # Split groups
@@ -97,7 +121,7 @@ class Quota(commands.Cog):
                     ]) if incomplete_quota else "*Everyone has met the quota!*"
                 )
             ),
-            color=discord.Color.from_str("#2B2D31")  # Dark elegant theme
+            color=discord.Color.from_str("#2B2D31")
         )
 
         embed.set_footer(
@@ -107,6 +131,7 @@ class Quota(commands.Cog):
         embed.timestamp = datetime.utcnow()
 
         await ctx.reply(embed=embed, mention_author=False)
+
 
 # -------------------------
 # Cog setup
