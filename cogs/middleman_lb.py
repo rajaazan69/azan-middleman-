@@ -6,7 +6,6 @@ from datetime import datetime
 # optional: constant for your leaderboard channel
 LB_CHANNEL_ID = 1373027974827212923  # change to your actual leaderboard channel ID
 
-
 class MiddlemanLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -63,7 +62,10 @@ class MiddlemanLeaderboard(commands.Cog):
         """Displays or updates the middleman leaderboard (top 10)."""
         msg = await self.update_or_create_lb(ctx.guild)
         if msg:
-            await ctx.reply(f"✅ Middleman leaderboard {'updated' if msg.edited_at else 'created'} in {msg.channel.mention}.", mention_author=False)
+            await ctx.reply(
+                f"✅ Middleman leaderboard {'updated' if msg.edited_at else 'created'} in {msg.channel.mention}.",
+                mention_author=False
+            )
         else:
             await ctx.reply("⚠️ Failed to update leaderboard.", mention_author=False)
 
