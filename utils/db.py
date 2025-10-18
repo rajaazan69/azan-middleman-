@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 _mongo: AsyncIOMotorClient | None = None
 _db = None
 
+
 async def get_db():
     """
     Returns the database instance.
@@ -23,6 +24,7 @@ async def get_db():
     _db = _mongo["ticketbot"]  # Database name
     return _db
 
+
 async def collections():
     """
     Returns a dict of all collections used by the bot.
@@ -36,5 +38,6 @@ async def collections():
         "tickets": db["tickets"],
         "transcripts": db["transcripts"],
         "clientPoints": db["clientPoints"],
-        "middlemen": db["middlemen"],  # Added so close_ticket works
+        "middlemen": db["middlemen"],       # permanent MM leaderboard
+        "weeklyQuota": db["weeklyQuota"],   # separate collection for weekly quota tracking
     }
