@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 from utils.db import collections
-import asyncio
 
 # -------------------------
 # CONFIG
@@ -115,9 +114,10 @@ class Quota(commands.Cog):
             await channel.send(embed=embed)
 
     # ------------------------- SEND QUOTA ON STARTUP -------------------------
-    async def send_quota_on_startup(self):
-        await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
+    async def send_quota_on_startup(self, channel: discord.TextChannel = None):
+        """Send the quota embed if one doesn't exist. Call this from bot.py."""
+        if not channel:
+            channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
         if not channel:
             print(f"[Quota Startup] Channel with ID {QUOTA_CHANNEL_ID} not found!")
             return
@@ -134,7 +134,4 @@ class Quota(commands.Cog):
 # Cog setup
 # -------------------------
 async def setup(bot):
-    cog = Quota(bot)
-    await bot.add_cog(cog)
-    # Schedule the startup task using asyncio.create_task
-    asyncio.create_task(cog.send_quota_on_startup())
+    await bot.add_cog(Quota(bot))
