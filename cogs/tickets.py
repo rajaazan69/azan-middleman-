@@ -602,6 +602,7 @@ class Tickets(commands.Cog):
         colls = await collections()
         tickets_coll = colls["tickets"]
         mm_coll = colls["middlemen"]
+        quota_coll = colls["weeklyQuota"]
     
         ticket_data = await tickets_coll.find_one({"channelId": str(ch.id)})
         claimed_by = ticket_data.get("claimedBy") if ticket_data else None
@@ -615,15 +616,36 @@ class Tickets(commands.Cog):
             from datetime import datetime
             current_week = datetime.utcnow().isocalendar()[1]
     
-            # Update MM quota progress
+            # ------------------- Update Middleman Leaderboard -------------------
             await mm_coll.update_one(
                 {"_id": mm_id_for_db},
-                {
-                    "$inc": {"completed": 1},
-                    "$set": {"week": current_week}
-                },
+                {"$inc": {"completed": 1}, "$set": {"week": current_week}},
                 upsert=True
             )
+    
+            # ------------------- Update Weekly Quota -------------------
+            quota_doc = await quota_coll.find_one({"_id": mm_id_for_db})
+            if quota_doc and quota_doc.get("week") == current_week:
+                await quota_coll.update_one(
+                    {"_id": mm_id_for_db},
+                    {"$inc": {"completed": 1}}
+                )
+            else:
+                await quota_coll.update_one(
+                    {"_id": mm_id_for_db},
+                    {"$set": {"completed": 1, "week": current_week}},
+                    upsert=True
+                )
+    
+            # ------------------- Refresh Boards -------------------
+            quota_cog = ctx.bot.get_cog("Quota")
+            if quota_cog:
+                await quota_cog.send_quota_on_startup()  # safe: only sends if none exists
+    
+            mm_lb_cog = ctx.bot.get_cog("MiddlemanLeaderboard")
+            if mm_lb_cog:
+                for guild in ctx.bot.guilds:
+                    await mm_lb_cog.update_or_create_lb(guild)
     
         embed = discord.Embed(
             title="🔒 Ticket Closed",
