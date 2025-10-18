@@ -79,46 +79,39 @@ class VouchConfirmView(View):
                     upsert=True
                 )
 
-            # Increment MM completed tickets
-            mm_id = int(ticket_data.get("claimedBy"))
-            await mm_coll.update_one({"_id": mm_id}, {"$inc": {"completed": 1}}, upsert=True)
-
-            # ----------------- Update Leaderboard -----------------
-            lb_channel = interaction.guild.get_channel(LB_CHANNEL_ID)
-            if lb_channel:
-                try:
-                    lb_message = await lb_channel.fetch_message(LB_MESSAGE_ID)
-                except Exception:
-                    embed = discord.Embed(
-                        title="🏆 Top Clients This Month",
-                        description="No data yet.",
-                        color=0x2B2D31,
-                        timestamp=datetime.utcnow()
-                    )
-                    embed.set_footer(text="Client Leaderboard")
-                    lb_message = await lb_channel.send(embed=embed)
-
-                top_users = await points_coll.find().sort("points", -1).limit(10).to_list(length=10)
-                leaderboard_text = "\n".join(
-                    f"**#{i+1}** <@{user.get('userId')}> — **{user.get('points',0)}** point{'s' if user.get('points',0)!=1 else ''}"
-                    for i, user in enumerate(top_users) if user.get("userId")
-                ) or "No data yet."
-
-                embed = discord.Embed(
-                    title="🏆 Top Clients This Month",
-                    description=leaderboard_text,
-                    color=0x2B2D31
-                )
-                embed.set_footer(text="Client Leaderboard")
-                await lb_message.edit(embed=embed)
-
-            # ----------------- Update Weekly Quota -----------------
+            # ------------------- Update Middleman Leaderboard -------------------
+            mm_id_for_db = int(ticket_data.get("claimedBy"))
             current_week = datetime.utcnow().isocalendar()[1]
-            await quota_coll.update_one(
-                {"_id": mm_id},
-                {"$inc": {"completed": 1}, "$setOnInsert": {"week": current_week}},
+
+            await mm_coll.update_one(
+                {"_id": mm_id_for_db},
+                {"$inc": {"completed": 1}, "$set": {"week": current_week}},
                 upsert=True
             )
+
+            # ------------------- Update Weekly Quota -------------------
+            quota_doc = await quota_coll.find_one({"_id": mm_id_for_db})
+            if quota_doc and quota_doc.get("week") == current_week:
+                await quota_coll.update_one(
+                    {"_id": mm_id_for_db},
+                    {"$inc": {"completed": 1}}
+                )
+            else:
+                await quota_coll.update_one(
+                    {"_id": mm_id_for_db},
+                    {"$set": {"completed": 1, "week": current_week}},
+                    upsert=True
+                )
+
+            # ------------------- Refresh Boards -------------------
+            quota_cog = self.bot.get_cog("Quota")
+            if quota_cog:
+                await quota_cog.send_quota_on_startup()  # safe: only sends if none exists
+
+            mm_lb_cog = self.bot.get_cog("MiddlemanLeaderboard")
+            if mm_lb_cog:
+                for guild in self.bot.guilds:
+                    await mm_lb_cog.update_or_create_lb(guild)
 
             # ----------------- Remove ticket from DB -----------------
             await tickets_coll.delete_one({"channelId": str(self.ticket_channel_id)})
