@@ -70,7 +70,7 @@ class VouchConfirmView(View):
             if not ticket_data:
                 return await interaction.followup.send("❌ Ticket data not found.", ephemeral=True)
 
-            # Only log points for users in the ticket
+                        # Only log points for users in the ticket
             user_ids = [str(uid) for uid in self.expected_users if uid]
             for uid in user_ids:
                 await points_coll.update_one(
@@ -78,7 +78,15 @@ class VouchConfirmView(View):
                     {"$inc": {"points": 1}, "$setOnInsert": {"userId": uid}},
                     upsert=True
                 )
-
+            
+            # ------------------- Update Client Leaderboard -------------------
+            ticket_points_cog = self.bot.get_cog("TicketPoints")
+            if ticket_points_cog:
+                try:
+                    await ticket_points_cog.log_points(ticket_channel)
+                except Exception as e:
+                    print(f"[VOUCH] ❌ Client leaderboard update error: {e}")
+            
             # ------------------- Update Middleman Leaderboard -------------------
             mm_id_for_db = int(ticket_data.get("claimedBy"))
             current_week = datetime.utcnow().isocalendar()[1]
