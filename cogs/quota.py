@@ -43,17 +43,15 @@ class Quota(commands.Cog):
     async def before_reset(self):
         await self.bot.wait_until_ready()
 
-    # ------------------------- COMMAND -------------------------
-    @commands.command(name="quota", aliases=["quotaboard", "qboard"])
-    async def quota_command(self, ctx: commands.Context = None, channel: discord.TextChannel = None):
-        guild = self.bot.get_guild(channel.guild.id if channel else ctx.guild.id)
+    # ------------------------- INTERNAL METHOD -------------------------
+    async def _send_quota_embed(self, channel: discord.TextChannel):
+        guild = channel.guild
         colls = await collections()
         quota_coll = colls["weeklyQuota"]
 
         mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
         if not mm_role:
-            if ctx:
-                return await ctx.reply("❌ Middleman role not found!", mention_author=False)
+            print(f"[Quota Embed] Middleman role not found in guild {guild.id}")
             return
 
         role_members = [m for m in mm_role.members if not m.bot]
@@ -108,26 +106,29 @@ class Quota(commands.Cog):
         )
         embed.timestamp = datetime.utcnow()
 
-        if ctx:
-            await ctx.reply(embed=embed, mention_author=False)
-        elif channel:
-            await channel.send(embed=embed)
+        await channel.send(embed=embed)
+
+    # ------------------------- COMMAND -------------------------
+    @commands.command(name="quota", aliases=["quotaboard", "qboard"])
+    async def quota_command(self, ctx: commands.Context):
+        await self._send_quota_embed(ctx.channel)
 
     # ------------------------- SEND QUOTA ON STARTUP -------------------------
-    async def send_quota_on_startup(self, channel: discord.TextChannel = None):
-        """Send the quota embed if one doesn't exist. Call this from bot.py."""
-        if not channel:
-            channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
+    async def send_quota_on_startup(self):
+        await self.bot.wait_until_ready()
+        channel = self.bot.get_channel(QUOTA_CHANNEL_ID)
         if not channel:
             print(f"[Quota Startup] Channel with ID {QUOTA_CHANNEL_ID} not found!")
             return
 
+        # Check if a quota message already exists
         async for msg in channel.history(limit=50):
             if msg.author == self.bot.user and msg.embeds:
                 if "WEEKLY MIDDLEMEN QUOTA" in msg.embeds[0].title:
                     return  # Already exists
 
-        await self.quota_command(channel=channel)
+        # Send the embed
+        await self._send_quota_embed(channel)
 
 
 # -------------------------
