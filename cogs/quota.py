@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 from utils.db import collections
+import asyncio
 
 # -------------------------
 # CONFIG
@@ -10,9 +11,6 @@ WEEKLY_QUOTA = 5
 MIDDLEMAN_ROLE_ID = 1373029428409405500
 QUOTA_CHANNEL_ID = 1429161206467268609
 
-# -------------------------
-# MAIN COG
-# -------------------------
 class Quota(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -28,24 +26,17 @@ class Quota(commands.Cog):
             colls = await collections()
             quota_coll = colls["weeklyQuota"]
             all_mms = await quota_coll.find().to_list(length=None)
-
             if not all_mms:
                 return
 
             current_week = datetime.utcnow().isocalendar()[1]
-            reset_count = 0
-
             for mm in all_mms:
                 if mm.get("week") != current_week:
                     await quota_coll.update_one(
                         {"_id": mm["_id"]},
                         {"$set": {"completed": 0, "week": current_week}}
                     )
-                    reset_count += 1
-
-            if reset_count > 0:
-                print(f"✅ [Quota Reset] Reset weekly quota for {reset_count} middlemen (Week {current_week})")
-
+            print(f"✅ [Quota Reset] Week {current_week} processed.")
         except Exception as e:
             print(f"[Quota Reset Error] {e}")
 
@@ -72,7 +63,6 @@ class Quota(commands.Cog):
 
         current_week = datetime.utcnow().isocalendar()[1]
         mm_progress = []
-
         for member in role_members:
             db_mm = db_data.get(member.id)
             completed = 0
@@ -113,7 +103,6 @@ class Quota(commands.Cog):
             ),
             color=discord.Color.from_str("#2B2D31")
         )
-
         embed.set_footer(
             text="Weekly middleman progress — auto resets every Monday",
             icon_url=self.bot.user.display_avatar.url
@@ -147,5 +136,5 @@ class Quota(commands.Cog):
 async def setup(bot):
     cog = Quota(bot)
     await bot.add_cog(cog)
-    # Schedule the startup task after cog is loaded
-    bot.loop.create_task(cog.send_quota_on_startup())
+    # Schedule the startup task using asyncio.create_task
+    asyncio.create_task(cog.send_quota_on_startup())
